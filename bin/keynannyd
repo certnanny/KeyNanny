@@ -1,0 +1,1017 @@
+#!/usr/bin/env perl
+#
+# KeyNanny provides a framework to protect sensitive data on a Unix host.
+#
+# 2014-05-19 Martin Bartosch <m.bartosch@cynops.de>
+#
+
+package KeyNanny;
+
+use strict;
+use warnings;
+use English;
+
+use Getopt::Long;
+use Config::Std;
+use Pod::Usage;
+use Carp;
+use Data::Dumper;
+use File::Spec;
+use File::Path;
+use Sys::Syslog;
+
+# use Cache::Memcached;
+# use Crypt::CBC;
+
+use base qw( Net::Server::PreForkSimple );
+
+my %options = (
+    config => '/etc/keynanny/default.conf',
+    );
+
+my %config = (
+    # defaults
+    '' => {
+	cache_strategy => 'preload',
+	log => 'syslog',
+    },
+    crypto => {
+	openssl => '/usr/bin/openssl',
+    },
+    server => {
+	proto => 'unix',
+	socket_file => '$(namespace).socket',
+	background => 1,
+	max_servers => 5,
+    },
+    access => {
+	read => 1,
+	write => 0,
+    }
+    );
+
+
+my $server_config;
+my $namespace;
+my $memd;
+my $instance_cipher;
+my $crypto_token;
+my $cache;
+
+sub usage {
+    print "Usage: ...\n";
+}
+
+sub log_message {
+    my $level = shift;
+    my $message = shift;
+    if ($config{''}->{log} eq 'console') {
+	print STDERR "$level: $message\n";
+    } elsif ($config{''}->{log} eq 'syslog') {
+	# syslog should not be given FATAL priorities
+	syslog lc($level), '(' . $config{''}->{namespace} . ') ' . $message;
+    }
+}
+
+sub log_debug {
+    my $arg = shift;
+    log_message('debug', $arg);
+}
+sub log_info {
+    my $arg = shift;
+    log_message('info', $arg);
+}
+sub log_warn {
+    my $arg = shift;
+    log_message('warning', $arg);
+}
+sub log_notice {
+    my $arg = shift;
+    log_message('notice', $arg);
+}
+sub log_error {
+    my $arg = shift;
+    log_message('err', $arg);
+}
+sub log_fatal {
+    my $arg = shift;
+    log_message('crit', $arg);
+}
+
+sub get_random_bytes {
+    my $arg = shift;
+    
+    if ($arg !~ m{ \A \d+ \z }xms) {
+	log_fatal("Invalid parameter (only numbers accepted): $arg");
+	die "Invalid parameter (only numbers accepted): $arg. Stopped";
+    }
+    
+    my $value;
+
+    if (-e '/dev/urandom') {
+	open my $handle, '<', '/dev/urandom';
+	read $handle, $value, $arg;
+	close $handle;
+    } else {
+	my $openssl = $config{crypto}->{openssl};
+	my $cmd = "$openssl rand $arg";
+	open my $handle, "$cmd |";
+	if (! $handle) {
+	    log_fatal("Error running command: $cmd");
+	    die "Error running command: $cmd";
+	}
+	read $handle, $value, $arg;
+	close $handle;
+    }
+    
+    if (defined $value && (length($value) == $arg)) {
+	return $value;
+    }
+
+    log_fatal("Could not generate random data");
+    die "Could not generate random data. Stopped";
+}
+
+# store data at key := namespace:arg in (untrusted) cache
+# cache is assumed to be publicly readable and writable, hence apply ample
+# integrity protection
+sub cache_store {
+    my $arg = shift;
+    my $data = shift;
+
+    return unless defined $data;
+
+    my $namespace = $config{''}->{namespace};
+
+    # local caching first
+    $cache->{$namespace}->{$arg} = $data;
+
+    # memcache
+    if (defined $memd) {
+	my $id = "skeepd:$namespace:$arg:";
+	
+	my $encrypted = $instance_cipher->encrypt(length($id) . ':' . $id . $data);
+	$memd->set($id, $encrypted);
+    }
+    return 1;
+}
+
+# retrieve data from cache at key := namespace:arg
+sub cache_retrieve {
+    my $arg = shift;
+
+    my $namespace = $config{''}->{namespace};
+
+    # local caching first
+    if (exists $cache->{$namespace}->{$arg}) {
+	return $cache->{$namespace}->{$arg};
+    }
+
+    # fallback to memcache
+    my $data;
+    if (defined $memd) {
+	my $id = "skeepd:$namespace:$arg:";
+
+	my $tmp = $memd->get($id);
+
+	if (defined $tmp) {
+	    # cache hit
+	    log_debug("Cache hit for object $namespace.$arg");
+	    my $decrypted = $instance_cipher->decrypt($tmp);
+	    # check if we can actually decrypt the data
+
+	    my $length;
+	    ($length, $data) = ($decrypted =~ m{ \A (\d+) : (.*) }xms);
+	    
+	    if (defined $length) {
+		# length header found, extract stored key
+		my $saved_id = substr($data, 0, $length);
+		if ($saved_id eq $id) {
+		    # authentic (stored id matches current)
+		    $data = substr($data, $length);
+		} else {
+		    # sanity check failed, stored id does not match requested id
+		    # (i. e. somebody tried to mess with the cache)
+		    log_warn("Integrity check failed, invalidated cached value");
+		    return;
+		}
+	    } else {
+		return;
+	    }
+	}
+    }
+
+    return $data;
+}
+
+
+# get token configuration hash using the specified configuration file section
+sub get_token {
+    my $arg = shift;
+
+    my $token = $arg;
+#    print Dumper $arg;
+    if (! -r $arg->{certificate}) {
+	log_fatal("Could not read certificate $arg->{certificate}");
+	die "Could not read certificate $arg->{certificate}. Stopped";
+    }
+
+    my $cert = getcertinfo($arg->{certificate});
+    if (! $cert) {
+	log_fatal("Could not parse certificate $arg->{certificate}");
+	die "Could not parse certificate $arg->{certificate}. Stopped";
+    }
+
+    $token->{certinfo} = $cert;
+    return $token;
+}
+
+sub read_tokens {
+    my $crypto_dir = $config{crypto}->{base_dir};
+    
+    undef $crypto_token;
+
+    my @token_id;
+    if (! defined $config{crypto}->{token}) {
+	die "No token configuration, cannot proceed. Stopped";
+    }
+    if (ref $config{crypto}->{token} eq '') {
+	push @token_id, $config{crypto}->{token};
+    } elsif (ref $config{crypto}->{token} eq 'ARRAY') {
+	@token_id = @{$config{crypto}->{token}};
+    }
+
+    my $max_notbefore = 0;
+    foreach my $id (@token_id) {
+	my $cert = $config{$id}->{certificate};
+	my $key  = $config{$id}->{key};
+	
+	if (! defined $cert) {
+	    die "No certificate defined in token section [$id]. Stopped";
+	}
+	if (! defined $key) {
+	    die "No key defined in token section [$id]. Stopped";
+	}
+	
+	my $token = get_token($config{$id});
+
+	# create lookup table
+	# certificate fingerprint is a unique handle, anything else could be ambiuous
+
+	my $subject  = $token->{certinfo}->{SubjectName};
+	my $issuer   = $token->{certinfo}->{IssuerName};
+	my $serial   = $token->{certinfo}->{Serial};
+	my $notbefore = $token->{certinfo}->{NotBefore};
+	my $notafter = $token->{certinfo}->{NotAfter};
+	my $fingerprint = $token->{certinfo}->{CertificateFingerprint};
+
+	# identify latest certificate (to be used for new encryption)
+	if ($notbefore > $max_notbefore) {
+	    $max_notbefore = $notbefore;
+	    $crypto_token->{current_token} = $token;
+	}
+
+	$crypto_token->{cert}->{fingerprint}->{$fingerprint} = $token;
+	
+	# add index by issuer, serialnumber
+	$crypto_token->{cert}->{issuer}->{$issuer}->{serial}->{$serial} = 
+	    $crypto_token->{cert}->{fingerprint}->{$fingerprint};
+    }
+}
+
+# parse PEM encoded X.509v3 certificate and return certificate information 
+# in a hash ref
+# Prerequisites: requires external openssl executable
+# arg: path to certificate
+#
+# return: hash reference containing the certificate information
+#
+# Returned hash reference contains the following values:
+# Version => <cert version, optional> Values: 2, 3
+# SubjectName => <cert subject common name>
+# IssuerName => <cert issuer common name>
+# SerialNumber => <cert serial number> Format: xx:xx:xx... (hex, upper case)
+# Serial => <cert serial number> As integer number
+# NotBefore => <cert validity> Format: YYYYDDMMHHMMSS
+# NotAfter  => <cert validity> Format: YYYYDDMMHHMMSS
+# PublicKey => <cert public key> Format: Base64 encoded (PEM)
+# Certificate => <certifcate> Format: Base64 encoded (PEM)
+# BasicConstraints => <cert basic constraints> Text (free style)
+# KeyUsage => <cert key usage> Format: Text (free style)
+# CertificateFingerprint => <cert SHA1 fingerprint> Format: xx:xx:xx... (hex, 
+#   upper case)
+#
+# optional:
+# SubjectAlternativeName => <cert alternative name> 
+# IssuerAlternativeName => <issuer alternative name>
+# SubjectKeyIdentifier => <X509v3 Subject Key Identifier>
+# AuthorityKeyIdentifier => <X509v3 Authority Key Identifier>
+# CRLDistributionPoints => <X509v3 CRL Distribution Points>
+# 
+sub getcertinfo {
+    my $arg = shift;
+
+    my $certinfo = {};
+    my %month = (
+		 Jan => 1, Feb => 2,  Mar => 3,  Apr => 4,
+		 May => 5, Jun => 6,  Jul => 7,  Aug => 8,
+		 Sep => 9, Oct => 10, Nov => 11, Dec => 12 );
+
+    my %mapping = (
+		   'serial' => 'SerialNumber',
+		   'subject' => 'SubjectName',
+		   'issuer' => 'IssuerName',
+		   'notBefore' => 'NotBefore',
+		   'notAfter' => 'NotAfter',
+		   'SHA1 Fingerprint' => 'CertificateFingerprint',
+		   'PUBLIC KEY' => 'PublicKey',
+		   'CERTIFICATE' => 'Certificate',
+		   'ISSUERALTNAME' => 'IssuerAlternativeName',
+		   'SUBJECTALTNAME' => 'SubjectAlternativeName',
+		   'BASICCONSTRAINTS' => 'BasicConstraints',
+		   'SUBJECTKEYIDENTIFIER' => 'SubjectKeyIdentifier',
+		   'AUTHORITYKEYIDENTIFIER' => 'AuthorityKeyIdentifier',
+		   'CRLDISTRIBUTIONPOINTS' => 'CRLDistributionPoints',
+		   );
+	
+
+    if (! defined $arg) {
+	return;
+    }
+    
+    my $openssl = $config{crypto}->{openssl};
+
+    # export certificate
+    my @cmd = (qq("$openssl"),
+	       'x509',
+	       '-in',
+	       $arg,
+	       '-inform',
+	       'pem',
+	       '-text',
+	       '-subject',
+	       '-issuer',
+	       '-serial',
+	       '-email',
+	       '-startdate',
+	       '-enddate',
+	       '-modulus',
+	       '-fingerprint','-sha1',
+	       '-pubkey',
+	       '-purpose',
+	       );
+
+
+    open my $fh, join(' ', @cmd) . '|';
+    if (! $fh) {
+	log_error("Error running command: " . join(" ", @cmd));
+	return;
+    }
+
+    my $state = "";
+    my @purposes;
+    while (<$fh>)
+    {
+	chomp;
+	tr/\r\n//d;
+
+	$state = "DATA" if (/^\s*Data:/);
+	$state = "PURPOSE" if (/^Certificate purposes:/);
+	$state = "PUBLIC KEY" if (/^-----BEGIN PUBLIC KEY-----/);
+	$state = "CERTIFICATE" if (/^-----BEGIN CERTIFICATE-----/);
+	$state = "SUBJECTALTNAME" if (/X509v3 Subject Alternative Name:/);
+	$state = "ISSUERALTNAME" if (/X509v3 Issuer Alternative Name:/);
+	$state = "BASICCONSTRAINTS" if (/X509v3 Basic Constraints:/);
+	$state = "SUBJECTKEYIDENTIFIER" if (/X509v3 Subject Key Identifier:/);
+	$state = "AUTHORITYKEYIDENTIFIER" if (/X509v3 Authority Key Identifier:/);
+	$state = "CRLDISTRIBUTIONPOINTS" if (/X509v3 CRL Distribution Points:/);
+
+	if ($state eq "DATA") {
+	    if (/Serial Number:\s+(\d+)/) {
+		$certinfo->{Serial} = $1;
+	    }
+	}
+	if ($state eq "PURPOSE")
+	{
+	    my ($purpose, $bool) = (/(.*?)\s*:\s*(Yes|No)/);
+	    next unless defined $purpose;
+	    push (@purposes, $purpose) if ($bool eq "Yes");
+
+	    # NOTE: state machine will leave PURPOSE state on the assumption
+	    # that 'OCSP helper CA' is the last cert purpose printed out
+	    # by OpenCA. It would be best to have OpenSSL print out
+	    # purpose information, just to be sure.
+	    $state = "" if (/^OCSP helper CA :/);
+	    next;
+	}
+	# Base64 encoded sections
+	if ($state =~ /^(PUBLIC KEY|CERTIFICATE)$/)
+	{
+	    my $key = $state;
+	    $key = $mapping{$key} if (exists $mapping{$key});
+
+	    $certinfo->{$key} .= "\n" if (exists $certinfo->{$key});
+	    $certinfo->{$key} .= $_ unless (/^-----/);
+
+	    $state = "" if (/^-----END $state-----/);
+	    next;
+	}
+
+	# X.509v3 extension one-liners
+	if ($state =~ /^(SUBJECTALTNAME|ISSUERALTNAME|BASICCONSTRAINTS|SUBJECTKEYIDENTIFIER|AUTHORITYKEYIDENTIFIER|CRLDISTRIBUTIONPOINTS)$/)
+	{
+	    next if (/X509v3 .*:/);
+	    my $key = $state;
+	    $key = $mapping{$key} if (exists $mapping{$key});
+	    # remove trailing and leading whitespace
+	    s/^\s*//;
+	    s/\s*$//;
+	    $certinfo->{$key} = $_ unless ($_ eq "<EMPTY>");
+	    
+	    # alternative line consists of only one line 
+	    $state = "";
+	    next;
+	}
+	
+ 	if (/(Version:|subject=|issuer=|serial=|notBefore=|notAfter=|SHA1 Fingerprint=)\s*(.*)/)
+ 	{
+	    my $key = $1;
+ 	    my $value = $2;
+	    # remove trailing garbage
+	    $key =~ s/[ :=]+$//;
+	    # apply key mapping
+	    $key = $mapping{$key} if (exists $mapping{$key});
+
+	    # store value
+ 	    $certinfo->{$key} = $value;
+ 	}
+    }
+    $fh->close();
+
+    # compose key usage text field
+    $certinfo->{KeyUsage} = join(", ", @purposes);
+    
+    # sanity checks
+    foreach my $var qw(Version SerialNumber SubjectName IssuerName NotBefore NotAfter CertificateFingerprint)
+    {
+	if (! exists $certinfo->{$var})
+	{
+	    log_warn("getcertinfo(): Could not determine field '$var' from X.509 certificate\n");
+	    return;
+	}
+    }
+
+
+    ####
+    # Postprocessing, rewrite certain fields
+
+    ####
+    # serial number
+    # extract hex certificate serial number (only required for -text format)
+    #$certinfo->{SerialNumber} =~ s/.*\(0x(.*)\)/$1/;
+
+
+    # pad with a leading zero if length is odd
+    if (length($certinfo->{SerialNumber}) % 2)
+    {
+	$certinfo->{SerialNumber} = '0' . $certinfo->{SerialNumber};
+    }
+    # convert to upcase and insert colons to separate hex bytes
+    $certinfo->{SerialNumber} = uc($certinfo->{SerialNumber});
+    $certinfo->{SerialNumber} =~ s/(..)/$1:/g;
+    $certinfo->{SerialNumber} =~ s/:$//;
+
+    ####
+    # get certificate version
+    $certinfo->{Version} =~ s/(\d+).*/$1/;
+
+    ####
+    # reverse DN order returned by OpenSSL
+    # foreach my $var qw(SubjectName IssuerName)
+    # {
+    # 	$certinfo->{$var} = join(", ", 
+    # 				 reverse split(/[\/,]\s*/, $certinfo->{$var}));
+    # 	# remove trailing garbage
+    # 	$certinfo->{$var} =~ s/[, ]+$//;
+    # }
+
+    # Sanitize DNs
+    foreach my $var qw(SubjectName IssuerName)
+    {
+	$certinfo->{$var} =~ s{ \A /}{}xms;
+    	$certinfo->{$var} =~ s{ / }{, }xmsg;
+    }
+
+    ####
+    # rewrite dates from human readable to ISO notation
+    foreach my $var qw(NotBefore NotAfter)
+    {
+	my ($mon, $day, $hh, $mm, $ss, $year, $tz) =
+	    $certinfo->{$var} =~ /(\S+)\s+(\d+)\s+(\d+):(\d+):(\d+)\s+(\d+)\s*(\S*)/;
+	my $dmon = $month{$mon};
+	if (! defined $dmon)
+	{
+	    log_warn("getcertinfo(): could not parse month '$mon' in date '$certinfo->{$var}' returned by OpenSSL");
+	    return;
+	}
+	
+	$certinfo->{$var} = sprintf("%04d%02d%02d%02d%02d%02d",
+				    $year, $dmon, $day, $hh, $mm, $ss);
+    }
+
+    return $certinfo;
+}
+
+
+
+# parse CMS structure and return recipient information
+# result structure: ARRAYREF of HASHREF
+sub get_cms_recipient_info {
+    my $arg = shift;
+    my $openssl = $config{crypto}->{openssl};
+
+    if (! -r $arg) {
+	log_error("Could not read CMS file $arg");
+	return;
+    }
+
+    my $cmd = "$openssl cms -in $arg -inform pem -cmsout -print";
+    open my $handle, "$cmd |";
+    if (! $handle) {
+	log_error("Error running command: $cmd");
+	return;
+    }
+
+    my $recipient_info;
+    my $data;
+  LINE:
+    while (my $line = <$handle>) {
+	chomp $line;
+	next LINE if ($line =~ m{ \A \s* \z }xms);
+
+	(my $indent, $line) = ($line =~ m{ \A (\s*) (.*) }xms);
+
+	my $indentlevel = length($indent || '');
+
+	if (my ($offset, $hexdata) = ($line =~ m{ \A ([0-9a-f]+) \s* - \s* ( (?:[0-9a-f][0-9a-f][ \-]){1,16} ) }xms)) {
+	    # handle hexdumps
+	} elsif (my ($tag, $value) = ($line =~ m{ ([^:]*) :? \s* (.*) }xms)) {
+	    #print "tag: $tag, value: $value\n";
+	    if ($tag =~ m{ issuerAndSerialNumber }xms) {
+		if (defined $data) {
+		    push @{$recipient_info}, $data;
+		    undef $data;
+		}
+	    } elsif (($tag eq 'issuer') || ($tag eq 'serialNumber')) {
+		$data->{$tag} = $value;
+	    }
+	} else {
+	    log_warn("Could not parse CMS dump line $line");
+	}
+
+    }
+    close $handle;
+
+    if (defined $data) {
+	push @{$recipient_info}, $data;
+    }
+
+    return $recipient_info;
+}
+
+
+sub persist_exists {
+    my $key = shift;
+
+    my $storage_path = $config{storage}->{dir};
+    my $file = File::Spec->catfile($storage_path, $key);
+
+    if (-r $file) {
+	return 1;
+    }
+    return;
+}
+
+# encrypt data for recipient and store result in persistent storage (directory $config{storage}->{dir})
+# 
+# arguments:
+# 
+sub persist_encrypt {
+    my $key = shift;
+    my $value = shift;
+
+    my $current_token = $crypto_token->{current_token};
+    if (! defined $current_token) {
+	log_fatal("No usable encryption token configured");
+	return;
+    }
+
+    my $cert_file = $current_token->{certificate};
+
+    if (! -r $cert_file) {
+	log_error("Recipient certificate $cert_file not readable");
+	return;
+    }
+
+    my $storage_path = $config{storage}->{dir};
+    if (! -d $storage_path) {
+	log_info("Storage path $storage_path does not exist, creating directories");
+	if (File::Path->can('make_path')) {
+	    File::Path->make_path($storage_path);
+	} else {
+	    # legacy mode
+	    File::Path->mkpath($storage_path);
+	}
+    }
+
+    my $file = File::Spec->catfile($storage_path, $key);
+
+    log_debug("Storing data in CMS file $file");
+
+    my $cmd = "openssl smime -encrypt -binary -aes256 -out $file -outform pem $cert_file";
+    open my $handle, "| $cmd";
+    if (! $handle) {
+	log_error("Error running command: $cmd");
+	return;
+    }
+    print $handle $value;
+    close $handle;
+
+    if ($? != 0) {
+	log_error("Error running command (non-zero return code): $cmd");
+	return;
+    }
+    return 1;
+}
+
+# private method: decrypt data with specified token
+sub _decrypt {
+    my $token = shift;
+    my $file = shift;
+
+    my $cert_file = $token->{certificate};
+    my $key_file  = $token->{key};
+    my $key_pass  = $token->{passphrase};
+
+    my $key_args = '';
+    if (defined $key_pass) {
+	$key_args = '-passin env:PW';
+	$ENV{PW} = $key_pass;
+    }
+    
+    my $cmd = "openssl smime -decrypt -in $file -inform pem -recip $cert_file -inkey $key_file $key_args";
+    open my $handle, "$cmd |";
+    if (! $handle) {
+	log_error("Error running command: $cmd");
+	delete $ENV{PW};
+	return;
+    }
+    local $/;
+    my $result = <$handle>;
+    close $handle;
+
+    delete $ENV{PW};
+
+    if ($? != 0) {
+	log_error("Error running command (non-zero return code): $cmd");
+	return;
+    }
+
+    return $result;
+}
+
+sub persist_decrypt {
+    my $key = shift;
+
+    my $storage_path = $config{storage}->{dir};
+    my $file = File::Spec->catfile($storage_path, $key);
+
+    log_debug("Retrieving data from CMS file $file");
+
+    my $recipient_info = get_cms_recipient_info($file);
+    my $token;
+
+    if (! defined $recipient_info) {
+	log_warn("Could not read recipient info from CMS file $file, trying all available tokens");
+	# fall back to brute force (check all available certs)
+	foreach my $fingerprint (keys %{$crypto_token->{cert}->{fingerprint}}) {
+	    $token = $crypto_token->{cert}->{fingerprint}->{$fingerprint};
+	    my $result = _decrypt($token, $file);
+	    if (defined $result) {
+		log_info("Found suitable decryption token for $file");
+		return $result;
+	    }
+	}
+	log_error("None of the configured tokens can decrypt file $file");
+	return;
+    } else {
+      RECIPIENT_INFO:
+	foreach my $recipient (@{$recipient_info}) {
+	    if (exists $crypto_token->{cert}->{issuer}->{ $recipient->{issuer} }) {
+		$token = $crypto_token->{cert}->{issuer}->{ $recipient->{issuer} }->{serial}->{ $recipient->{serialNumber} };
+	    }
+	    last RECIPIENT_INFO if defined $token;
+	}
+	if (! $token) {
+	    log_error("Recipient certificate (issuer: $recipient_info->{issuer}, serial number: $recipient_info->{serialNumber}) not available");
+	    return;
+	}
+    }
+
+    return _decrypt($token, $file);
+}
+
+###########################################################################
+
+###########################################################################
+
+# ownership/mode for socket file
+sub post_bind_hook {
+    my $self = shift;
+
+    if (defined $config{server}->{socket_mode}) {
+	# evaluate in octal mode
+	my $mode = oct($config{server}->{socket_mode});
+	chmod $mode, $config{server}->{socket_file};
+    }
+}
+
+# override display in process list for worker children
+sub child_init_hook {
+    my $self = shift;
+
+    $0 = "keynannyd worker ($namespace)";
+}
+
+# reread tokens on server restart request
+sub restart_open_hook {
+    read_tokens;
+}
+
+sub process_request {
+    my $self = shift;
+
+    # read one command line
+    my $line = <STDIN>;
+    return if (! defined $line);
+
+    $line =~ s/[\r\n]+$//;
+    # make sure to sanitize $arg: only word characters allowed in order to prevent 
+    # attacks (e. g. shell escape or directory traversals)
+    my ($cmd, $arg) = ($line =~ m{ \A (\w+) \s+ (\w+) \z }xms);
+    if (! defined $cmd) {
+	print "CLIENT_ERROR invalid syntax\r\n";
+	return;
+    }
+
+    if ($cmd eq 'get') {
+	if (! $config{access}->{read}) {
+	    print "CLIENT_ERROR access denied\r\n";
+	}
+
+	my $data = cache_retrieve($arg);
+
+	if (! defined $data) {
+	    # cache miss, get data from persistent store
+	    if (persist_exists($arg)) {
+		$data = persist_decrypt($arg);
+	    
+		# cache retrieved value for later use
+		cache_store($arg, $data);
+	    }
+	}
+
+	if (defined $data) {
+	    print $data;
+	}
+    } elsif ($cmd eq 'set') {
+	if (! $config{access}->{write}) {
+	    print "CLIENT_ERROR access denied\r\n";
+	}
+
+	# clear input separator (allow binary data)
+	local $/;
+	my $data = <STDIN>;
+	
+	# persist value
+	if (persist_encrypt($arg, $data)) {
+
+	    # and cache it
+	    cache_store($arg, $data);
+	    print "STORED\r\n";
+	} else {
+	    print "NOT_STORED\r\n";
+	}
+    } else {
+	print "ERROR\r\n";
+    }
+}
+
+
+###########################################################################
+# command line options
+GetOptions(\%options,
+	   'config=s',
+	   'dumpconfig',
+	   'debug',
+	   'help');
+
+if ($options{help}) {
+    usage();
+    exit 0;
+}
+
+###########################################################################
+# process configuration file
+read_config($options{config}, %config);
+
+# use namespace if set in configuration...
+$namespace ||= $config{''}->{namespace};
+
+# ... if not defined there, use configuration file base name
+if (! defined $namespace) {
+    my $configfile = $options{config};
+    my ($vol, $dir, $filename) = File::Spec->splitpath($options{config});
+    my $basename = $filename;
+    $basename =~ s{ \. .*? \z }{}xms;
+    $namespace = $basename;
+}
+
+# store namespace in config hash (if not already present)
+$config{''}->{namespace} = $namespace;
+
+# postprocess config (replace referenced variables)
+foreach my $section (keys %config) {
+    foreach my $key (keys %{$config{$section}}) {
+	my $entry = $config{$section}->{$key};
+	while ($entry =~ m{ \$\((.*?)\) }xms) {
+	    my $refvar = $1;
+
+	    # check if referenced variable contains the section name
+	    my $refsec = '';
+	    my $refkey = $refvar;
+	    if ($refvar =~ m{ \. }xms) {
+		($refsec, $refkey) = ($refvar =~ m{ (.*?) \. (.*) \z }xms);
+	    }
+	    my $refval = $config{$refsec}->{$refkey} || '';
+
+	    $entry =~ s{ \$\($refvar\) }{$refval}xms;
+	}
+
+	# replace closures
+	if ($entry =~ m{ \A sub \s* \{ .* \} }xms) {
+	    #print "code ref\n";
+	    $entry = eval $entry;
+
+	    if ($EVAL_ERROR) {
+		die "Evaluation error in anonymous subroutine configured for $section:$key: " . $EVAL_ERROR;
+	    }
+	}	
+
+	$config{$section}->{$key} = $entry;
+    }
+}
+if ($options{dumpconfig}) {
+    print Dumper \%config; die;
+}
+
+if ($config{''}->{log} !~ m{ \A (?:console|syslog) \z}xms) {
+    die "Invalid log configuration (expected: 'syslog' or 'console'). Stopped";
+}
+
+if ($config{''}->{log} eq 'syslog') {
+    openlog 'keynannyd', 'ndelay,pid', 'local0';
+}
+
+###########################################################################
+# prepare crypto tokens
+read_tokens;
+
+###########################################################################
+# prepare storage
+my $storage_path = $config{storage}->{dir};
+if (! -d $storage_path) {
+    log_info("Storage path $storage_path does not exist, creating directories");
+    if (File::Path->can('make_path')) {
+	File::Path->make_path($storage_path);
+    } else {
+	# legacy mode
+	File::Path->mkpath($storage_path);
+    }
+    
+    # storage should be owned by daemon user/group
+    my $storageuser = $EUID;
+    my $storagegroup = $EGID;
+    if (defined $config{server}->{user}) {
+	#$storageuser = getpwnam($config{server}->{user});
+    }
+    if (defined $config{server}->{group}) {
+	#$storagegroup = getgrnam($config{server}->{group});
+    }
+    
+    # try to change ownership of storage dir
+    log_info("Changing ownership or storage directory $storage_dir to uid: $storageuser, gid: $storagegroup");
+    chown $storageuser, $storagegroup, $storage_path;
+}
+
+
+###########################################################################
+# initialize caching
+if ($config{''}->{cache_strategy} eq 'preload') {
+    # read all secrets in one go
+
+    opendir(my $dh, $storage_path);
+    if (! defined $dh) {
+	die "Could not scan storage directory $storage_path. Stopped";
+    }
+
+    log_info("Scanning $storage_path for encrypted data objects");
+  DIR_ENTRY:
+    while (my $entry  = readdir $dh) {
+	next DIR_ENTRY if (($entry eq '.') || ($entry eq '..'));
+	
+	if (persist_exists($entry)) {
+	    my $data = persist_decrypt($entry);
+	    if (defined $data) {
+		$cache->{$namespace}->{$entry} = $data;
+		log_info("Cached $entry");
+	    } else {
+		log_info("Could not decrypt $entry (unavailable)");
+	    }
+	}
+    }
+    closedir $dh;
+} elsif ($config{''}->{cache_strategy} eq 'memcache') {
+    ###########################################################################
+    # prepare memcached connection
+    my @memcached_servers;
+    if (defined $config{memcache}->{servers}) {
+	if (ref $config{memcache}->{servers} eq '') {
+	    push @memcached_servers, $config{memcache}->{servers};
+	} else {
+	    @memcached_servers = @{$config{memcache}->{servers}};
+	}
+    }
+    
+    require Cache::Memcached;
+
+    $memd = Cache::Memcached->new(
+	{
+	    'servers' => \@memcached_servers,
+	});
+
+    if (! defined $memd) {
+	die "Could not instantiate memcached connection. Stopped";
+    }
+
+    ###########################################################################
+    # prepare instance crypto key
+
+    my $openssl = $config{crypto}->{openssl};
+    if (! -x $openssl) {
+	confess "Could not execute openssl at $openssl. Stopped";
+    }
+
+    require Crypt::CBC;
+
+    $instance_cipher = Crypt::CBC->new(
+	-cipher      => 'Crypt::OpenSSL::AES',
+	-literal_key => 1,
+	-key         => get_random_bytes(32),
+	-iv          => get_random_bytes(16),
+	-header      => 'none',
+	);
+    
+    if (! $instance_cipher) {
+	die "Could not create cipher instance. Stopped";
+    }
+
+} else {
+    die "Invalid cache strategy (expected: 'memcache' or 'preload'). Stopped";
+}
+
+
+###########################################################################
+# set umask
+if (defined ($config{storage}->{umask})) {
+    my $umask = oct($config{storage}->{umask});
+    log_info("setting umask to $config{storage}->{umask}");
+    umask $umask;
+}
+
+# prepare servers
+$server_config = $config{server};
+# custom options
+if (defined $server_config->{socket_file}) {
+    $server_config->{port} = $server_config->{socket_file} . '|unix';
+} else {
+    $server_config->{socket_file} = $server_config->{port};
+    $server_config->{socket_file} =~ s/|.*$//g;
+}
+if (! defined $server_config->{pid_file}) {
+    $server_config->{pid_file} = $server_config->{socket_file} . '.pid';
+}
+
+my $server = KeyNanny->new($server_config);
+
+$server->run();

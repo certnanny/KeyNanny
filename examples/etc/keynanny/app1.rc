@@ -1,0 +1,12 @@
+# optional startup script
+# (prepare local system for keynanny)
+# arguments to this script, passed by the init script: start, stop, restart
+
+case "$1" in
+    start)
+	;;
+    stop)
+	;;
+    restart)
+	;;
+esac

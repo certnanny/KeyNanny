@@ -1,0 +1,139 @@
+#!/usr/bin/env perl
+#
+# KeyNanny provides a framework to protect sensitive data on a Unix host.
+# keynanny implements a command line client for
+# - setting values
+# - getting values
+# - rendering templates
+#
+# 2014-05-19 Martin Bartosch <m.bartosch@cynops.de>
+#
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use IO::Socket::UNIX;
+use Template;
+#use Template::Context;
+
+use Data::Dumper;
+
+my %options = (
+    );
+
+my %config;
+my $socketfile;
+
+sub usage {
+    print "Usage: ...\n";
+}
+
+
+sub process_template {
+    my $file = shift;
+    my $variables = shift;
+
+    open my $fh, '<', $file;
+    if (! $fh) {
+	die "Could not read template file $file. Stopped";
+    }
+    local $/;
+    my $input = <$fh>;
+    close $fh;
+
+    my $template = Template->new(
+	{
+	});
+
+    my $vars = {};
+    foreach my $entry (@{$variables}) {
+	$vars->{$entry} = get_var($entry);
+    }
+
+    $template->process(\$input, $vars) || die $template->error();
+    
+    return 1;
+}
+
+sub get_var {
+    my $arg = shift;
+    my $socket = IO::Socket::UNIX->new(
+	Type => SOCK_STREAM,
+	Peer => $socketfile
+	) or die "Cannot connect to server: $!. Stopped";
+    
+    if (! defined $socket) {
+	die "Could not open socket $socketfile. Stopped";
+    }
+
+    print $socket 'get ' . $arg . "\r\n";
+
+    local $/;
+    my $result = <$socket>;
+
+    $socket->close;
+    
+    return $result;
+}
+
+GetOptions(\%options,
+	   'socketfile=s',
+	   'variable=s@',
+	   'help');
+
+if ($options{help}) {
+    usage();
+    exit 0;
+}
+
+
+###########################################################################
+# process configuration file
+$socketfile = $options{socketfile};
+
+if (! defined $socketfile) {
+    die "No --socketfile defined. Stopped";
+}
+
+if (! -e $socketfile) {
+    die "Socketfile $socketfile does not exist. Stopped";
+}
+
+if (! (-r $socketfile && -w $socketfile)) {
+    die "Socketfile $socketfile is not accessible (permission problem?). Stopped";
+}
+
+my $cmd = shift;
+
+my @variables = map { split(/,/) } @{$options{variable}};
+
+
+if (! defined $cmd) {
+    usage;
+    exit 0;
+}
+
+
+my $rc = 0;
+if ($cmd eq 'get') {
+    my $arg = shift;
+
+    print get_var($arg);
+
+} elsif ($cmd eq 'set') {
+    my $arg = shift;
+    die "Not yet implemented";
+
+} elsif ($cmd eq 'template') {
+    my $infile = shift;
+
+    if (! process_template($infile, \@variables)) {
+	$rc = 1;
+    }
+    
+} else {
+    die "Invalid command '$cmd'. Stopped";
+}
+    
+exit $rc;
