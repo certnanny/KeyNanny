@@ -15,12 +15,13 @@ use warnings;
 use Getopt::Long;
 use IO::Socket::UNIX;
 use Template;
+
 #use Template::Context;
 
 use Data::Dumper;
+use KeyNanny;
 
-my %options = (
-    );
+my %options = ();
 
 my %config;
 my $socketfile;
@@ -29,111 +30,74 @@ sub usage {
     print "Usage: ...\n";
 }
 
-
 sub process_template {
-    my $file = shift;
+    my $kn        = shift;
+    my $infile    = shift;
+    my $outfile   = shift;
     my $variables = shift;
 
-    open my $fh, '<', $file;
-    if (! $fh) {
-	die "Could not read template file $file. Stopped";
-    }
+    my $fh;
+    open( $fh, '<', $infile ) or die "Error opening template file: $!\n";
     local $/;
     my $input = <$fh>;
     close $fh;
 
-    my $template = Template->new(
-	{
-	});
+    my $template = Template->new( {} );
 
     my $vars = {};
-    foreach my $entry (@{$variables}) {
-	$vars->{$entry} = get_var($entry);
+    foreach my $entry ( @{$variables} ) {
+        $vars->{$entry} = $kn->get_var($entry);
     }
 
-    $template->process(\$input, $vars) || die $template->error();
-    
+    $template->process( \$input, $vars, $outfile ) || die $template->error();
+
     return 1;
 }
 
-sub get_var {
-    my $arg = shift;
-    my $socket = IO::Socket::UNIX->new(
-	Type => SOCK_STREAM,
-	Peer => $socketfile
-	) or die "Cannot connect to server: $!. Stopped";
-    
-    if (! defined $socket) {
-	die "Could not open socket $socketfile. Stopped";
-    }
+GetOptions( \%options, 'socketfile=s', 'variable=s@', 'outfile=s', 'help' );
 
-    print $socket 'get ' . $arg . "\r\n";
-
-    local $/;
-    my $result = <$socket>;
-
-    $socket->close;
-    
-    return $result;
-}
-
-GetOptions(\%options,
-	   'socketfile=s',
-	   'variable=s@',
-	   'help');
-
-if ($options{help}) {
+if ( $options{help} ) {
     usage();
     exit 0;
 }
-
 
 ###########################################################################
 # process configuration file
 $socketfile = $options{socketfile};
 
-if (! defined $socketfile) {
-    die "No --socketfile defined. Stopped";
-}
-
-if (! -e $socketfile) {
-    die "Socketfile $socketfile does not exist. Stopped";
-}
-
-if (! (-r $socketfile && -w $socketfile)) {
-    die "Socketfile $socketfile is not accessible (permission problem?). Stopped";
-}
+my $kn = KeyNanny->new( socketfile => $socketfile ) or die "Error: $@";
 
 my $cmd = shift;
 
-my @variables = map { split(/,/) } @{$options{variable}};
+my @variables = map { split(/,/) } @{ $options{variable} };
 
-
-if (! defined $cmd) {
+if ( !defined $cmd ) {
     usage;
     exit 0;
 }
 
-
 my $rc = 0;
-if ($cmd eq 'get') {
+if ( $cmd eq 'get' ) {
     my $arg = shift;
 
-    print get_var($arg);
+    print $kn->get_var($arg);
 
-} elsif ($cmd eq 'set') {
+}
+elsif ( $cmd eq 'set' ) {
     my $arg = shift;
     die "Not yet implemented";
 
-} elsif ($cmd eq 'template') {
+}
+elsif ( $cmd eq 'template' ) {
     my $infile = shift;
 
-    if (! process_template($infile, \@variables)) {
-	$rc = 1;
+    if ( !process_template( $kn, $infile, $options{outfile}, \@variables ) ) {
+        $rc = 1;
     }
-    
-} else {
+
+}
+else {
     die "Invalid command '$cmd'. Stopped";
 }
-    
+
 exit $rc;

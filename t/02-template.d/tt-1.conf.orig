@@ -1,0 +1,9 @@
+# This is a sample configuration file
+#
+
+global:
+    user = "admin"
+    pass = "1yek"
+
+specific:
+    param3 = "true"
