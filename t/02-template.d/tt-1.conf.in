@@ -1,0 +1,9 @@
+# This is a sample configuration file
+#
+
+global:
+    user = "admin"
+    pass = "[% key1 %]"
+
+specific:
+    param3 = "true"
