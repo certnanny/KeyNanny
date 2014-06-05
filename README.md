@@ -113,7 +113,7 @@ The integrator of the solution installs the demoapp application and prepares all
 
 The integrator then creates symlinks to a (not yet existing) directory:
 
-```
+```Shell
 cd /etc/demoapp/
 ln -s /credentials/demoapp/demoapp.conf .
 ln -s /credentials/demoapp/authkey.pem .
@@ -125,7 +125,7 @@ Next, the integrator creates a file called /etc/demoapp/demoapp.conf.template wh
 
 In the template, appearances of the actual passwords are replaced with Template Toolkit variable references, e. g.:
 
-```
+```Shell
 ...
 ldap_binduser = CN=Dummy App,O=KeyNanny,C=DE
 ldap_password = [% ldap %]
@@ -140,7 +140,7 @@ webservice_clientcert = /etc/demoapp/client-key.pem
 
 Next the integrator creates the startup script for the KeyNanny instance (this is only an example to illustrate the point, actual scripts will have to use more error checking):
 
-```
+```Shell
 cat <<EOF >/etc/keynanny/demoapp.rc
 #!/bin/bash
 case "$1" in
