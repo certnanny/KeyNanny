@@ -66,7 +66,7 @@ KeyNanny is capable of automatically detecting the correct decryption certificat
 More than one KeyNanny instance can use the same cryptographic keys. In fact, this is recommended: configure all KeyNanny instances to point to the same keys to avoid excessive key management.
 
 KeyNanny does _not_ honor the NotAfter date of certificates, nor does it consider CRLs, CA chains and trust management. 
-There is little point in doing so with this particular encryption application anyway, and it is not useful to enforce such a behaviour. If you wish to replace your keys regularly, simply add a new key/cert to the configuration and KeyNanny will use the new one automatically (if its NotBefore is higher than those of the existing certificates).
+There is little point in doing so with this particular encryption application anyway, and it is not useful to enforce such a behaviour in this particular case. If you wish to replace your keys regularly, simply add a new key/cert to the configuration and KeyNanny will use the new one automatically (if its NotBefore is higher than those of the existing certificates).
 
 KeyNanny supports Hardware Security Modules via OpenSSL engine. In fact this is the recommended operation mode and the only way to get rid of storing a credential (password or key) unencrypted on disk.
 
@@ -79,9 +79,9 @@ BTW, if you have stupid policies that prohibit this (which is impossible) you ca
 While the task of the KeyNanny daemon is to manage decryption of credentials and limit access to these credentials, you will need clients connecting to KeyNanny to actually do something useful with it.
 
 The KeyNanny project comes with 
--- a standalone command line client
--- a Perl Connector implementation (https://github.com/mrscotty/connector)
--- a Perl class that allows other Perl programs to talk to KeyNanny.
+- a standalone command line client
+- a Perl Connector implementation (https://github.com/mrscotty/connector)
+- a Perl class that allows other Perl programs to talk to KeyNanny.
 
 In the future there may also be libraries for C, Python, Ruby and other commonly used languages.
 
@@ -104,8 +104,8 @@ With this mechanism the system administrator can adapt how KeyNanny is integrate
 The standalone command line client is probably the most useful for unmodified applications which still require the configuration file in the application specific format, cleartext passwords included.
 
 Here we assume that the application "demoapp" (running as Unix user demoapp and group nobody) requires two sensitive configuration items: 
--- a configuration file /etc/demoapp/demoapp.conf containing the passwords for an LDAP account, a web service and the password for the authkey file (variables "ldap", "webservice", "authkeypassphrase")
--- a binary file containing a cryptographic key /etc/demoapp/authkey.pem (variable "authkey")
+- a configuration file /etc/demoapp/demoapp.conf containing the passwords for an LDAP account, a web service and the password for the authkey file (variables "ldap", "webservice", "authkeypassphrase")
+- a binary file containing a cryptographic key /etc/demoapp/authkey.pem (variable "authkey")
 
 The application requires that a lot of additional files in /etc/demoapp/, but none of those additional files contains sensitive information.
 
@@ -113,9 +113,11 @@ The integrator of the solution installs the demoapp application and prepares all
 
 The integrator then creates symlinks to a (not yet existing) directory:
 
+```
 cd /etc/demoapp/
 ln -s /credentials/demoapp/demoapp.conf .
 ln -s /credentials/demoapp/authkey.pem .
+```
 
 This operation creates (dangling) symlinks in the application configuration directory.
 
@@ -123,6 +125,7 @@ Next, the integrator creates a file called /etc/demoapp/demoapp.conf.template wh
 
 In the template, appearances of the actual passwords are replaced with Template Toolkit variable references, e. g.:
 
+```
 ...
 ldap_binduser = CN=Dummy App,O=KeyNanny,C=DE
 ldap_password = [% ldap %]
@@ -133,10 +136,11 @@ webservice_password = [% webservice %]
 webservice_clientcert = /etc/demoapp/client-cert.pem
 webservice_clientcert = /etc/demoapp/client-key.pem
 ...
-
+```
 
 Next the integrator creates the startup script for the KeyNanny instance (this is only an example to illustrate the point, actual scripts will have to use more error checking):
 
+```
 cat <<EOF >/etc/keynanny/demoapp.rc
 #!/bin/bash
 case "$1" in
@@ -166,6 +170,7 @@ case "$1" in
 	;;
 esac
 EOF
+```
 
 We are almost done. The KeyNanny rc script will create the temp file system and create the sensitive files in it. After this script terminates, the demoapp application should start without a problem.
 
