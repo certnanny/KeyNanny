@@ -452,7 +452,7 @@ sub getcertinfo {
     $certinfo->{KeyUsage} = join(", ", @purposes);
     
     # sanity checks
-    foreach my $var qw(Version SerialNumber SubjectName IssuerName NotBefore NotAfter CertificateFingerprint)
+    foreach my $var (qw(Version SerialNumber SubjectName IssuerName NotBefore NotAfter CertificateFingerprint))
     {
 	if (! exists $certinfo->{$var})
 	{
@@ -496,7 +496,7 @@ sub getcertinfo {
     # }
 
     # Sanitize DNs
-    foreach my $var qw(SubjectName IssuerName)
+    foreach my $var (qw(SubjectName IssuerName))
     {
 	$certinfo->{$var} =~ s{ \A /}{}xms;
     	$certinfo->{$var} =~ s{ / }{, }xmsg;
@@ -504,7 +504,7 @@ sub getcertinfo {
 
     ####
     # rewrite dates from human readable to ISO notation
-    foreach my $var qw(NotBefore NotAfter)
+    foreach my $var (qw(NotBefore NotAfter))
     {
 	my ($mon, $day, $hh, $mm, $ss, $year, $tz) =
 	    $certinfo->{$var} =~ /(\S+)\s+(\d+)\s+(\d+):(\d+):(\d+)\s+(\d+)\s*(\S*)/;
