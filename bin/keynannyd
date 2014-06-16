@@ -756,7 +756,10 @@ sub process_request {
     return if (! defined $line);
 
     $line =~ s/[\r\n]+$//;
-    # make sure to sanitize $arg: only word characters allowed in order to prevent 
+
+    log_debug('Incoming request ' . $line );
+
+    # make sure to sanitize $arg: only word characters allowed in order to prevent
     # attacks (e. g. shell escape or directory traversals)
     my ($cmd, $arg) = ($line =~ m{ \A (\w+) \s+ (\w+) \z }xms);
     if (! defined $cmd) {
@@ -908,9 +911,9 @@ if (! -d $storage_path) {
     if (defined $config{server}->{group}) {
 	#$storagegroup = getgrnam($config{server}->{group});
     }
-    
+
     # try to change ownership of storage dir
-    log_info("Changing ownership or storage directory $storage_dir to uid: $storageuser, gid: $storagegroup");
+    log_info("Changing ownership or storage directory $storage_path to uid: $storageuser, gid: $storagegroup");
     chown $storageuser, $storagegroup, $storage_path;
 }
 
