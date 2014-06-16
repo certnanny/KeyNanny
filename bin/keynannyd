@@ -1028,6 +1028,13 @@ if (! defined $server_config->{pid_file}) {
     $server_config->{pid_file} = $server_config->{socket_file} . '.pid';
 }
 
+# override daemon user/group if not running as root
+if ($EUID != 0) {
+    log_info("running as non-privileged user");
+    $server_config->{user} = $EUID;
+    $server_config->{group} = $EGID;
+}
+
 my $server = KeyNanny->new($server_config);
 
 $server->run();
