@@ -134,42 +134,41 @@ webservice_url = https://soap.keynanny.example.com/service/...
 webservice_user = demoapp
 webservice_password = [% webservice %]
 webservice_clientcert = /etc/demoapp/client-cert.pem
-webservice_clientcert = /etc/demoapp/client-key.pem
+webservice_clientkey = /etc/demoapp/client-key.pem
 ...
 ```
 
 Next the integrator creates the startup script for the KeyNanny instance (this is only an example to illustrate the point, actual scripts will have to use more error checking):
 
+File /etc/keynanny/demoapp.rc:
 ```Shell
-cat <<EOF >/etc/keynanny/demoapp.rc
 #!/bin/bash
 case "$1" in
     start)
         umount /credentials/demoapp
-	mount -t tmpfs -o size=128000 /credentials/demoapp/
-	# make sure all files are created with permissions r-------- and directories r-x------
-	umask 0277
+        mount -t tmpfs -o size=128000 /credentials/demoapp/
+        # make sure all files are created with permissions r-------- and directories r-x------
+        umask 0277
 
-	chown demoapp:root /credentials/demoapp/
-	# not necessary due to umask: chmod 500 /credentials/demoapp
-	for file in /etc/demoapp/*.template ; do
-	    outfile=`basename ${file%%.template}`
-	    # render config file from template to temp file system
-	    keynanny --socketfile /var/lib/keynanny/demoapp.socket template $file >/credentials/demoapp/$outfile
-	    chown demoapp:root /credentials/demoapp/$outfile
-	    # chmod 400 /credentials/demoapp/$outfile
-	done
-	umask 
-	# and place the key file in this directory as well
-	keynanny --socketfile /var/lib/keynanny/demoapp.socket get authkey >/credentials/demoapp/client-key.pem
-	chown demoapp:root /credentials/demoapp/client-key.pem
-	# chmod 400 /credentials/demoapp/client-key.pem
+        chown demoapp:root /credentials/demoapp/
+        # not necessary due to umask: chmod 500 /credentials/demoapp
+        for file in /etc/demoapp/*.template ; do
+            outfile=`basename ${file%%.template}`
+            # render config file from template to temp file system
+            keynanny --socketfile /var/lib/keynanny/demoapp.socket template $file >/credentials/demoapp/$outfile
+            chown demoapp:root /credentials/demoapp/$outfile
+            # chmod 400 /credentials/demoapp/$outfile
+        done
+        umask 
+        # and place the key file in this directory as well
+        keynanny --socketfile /var/lib/keynanny/demoapp.socket get authkey >/credentials/demoapp/client-key.pem
+        chown demoapp:root /credentials/demoapp/client-key.pem
+        # chmod 400 /credentials/demoapp/client-key.pem
         ;;
     stop)
-	umount /credentials/demoapp
-	;;
+        umount /credentials/demoapp
+        ;;
 esac
-EOF
 ```
 
 We are almost done. The KeyNanny rc script will create the temp file system and create the sensitive files in it. After this script terminates, the demoapp application should start without a problem.

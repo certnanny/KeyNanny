@@ -20,6 +20,7 @@ use File::Spec;
 use File::Path;
 use Sys::Syslog;
 
+# optional: only required in lazy mode
 # use Cache::Memcached;
 # use Crypt::CBC;
 
@@ -148,7 +149,7 @@ sub cache_store {
 
     # memcache
     if (defined $memd) {
-	my $id = "skeepd:$namespace:$arg:";
+	my $id = "keynanny:$namespace:$arg:";
 	
 	my $encrypted = $instance_cipher->encrypt(length($id) . ':' . $id . $data);
 	$memd->set($id, $encrypted);
@@ -170,7 +171,7 @@ sub cache_retrieve {
     # fallback to memcache
     my $data;
     if (defined $memd) {
-	my $id = "skeepd:$namespace:$arg:";
+	my $id = "keynanny:$namespace:$arg:";
 
 	my $tmp = $memd->get($id);
 
@@ -600,6 +601,12 @@ sub persist_encrypt {
     my $key = shift;
     my $value = shift;
 
+    # sanity checks: keys may only be word characters
+    if ($key !~ m{ \A \w+ \z }xms) {
+	log_notice("Invalid characters in key $key");
+	return;
+    }
+
     my $current_token = $crypto_token->{current_token};
     if (! defined $current_token) {
 	log_fatal("No usable encryption token configured");
@@ -682,6 +689,12 @@ sub _decrypt {
 
 sub persist_decrypt {
     my $key = shift;
+
+    # sanity checks: keys may only be word characters
+    if ($key !~ m{ \A \w+ \z }xms) {
+	log_notice("Invalid characters in key $key");
+	return;
+    }
 
     my $storage_path = $config{storage}->{dir};
     my $file = File::Spec->catfile($storage_path, $key);
@@ -906,10 +919,10 @@ if (! -d $storage_path) {
     my $storageuser = $EUID;
     my $storagegroup = $EGID;
     if (defined $config{server}->{user}) {
-	#$storageuser = getpwnam($config{server}->{user});
+	$storageuser = getpwnam($config{server}->{user});
     }
     if (defined $config{server}->{group}) {
-	#$storagegroup = getgrnam($config{server}->{group});
+	$storagegroup = getgrnam($config{server}->{group});
     }
 
     # try to change ownership of storage dir
