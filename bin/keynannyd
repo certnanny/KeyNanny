@@ -66,11 +66,40 @@ sub usage {
 sub log_message {
     my $level = shift;
     my $message = shift;
-    if ($config{''}->{log} eq 'console') {
+    
+    my $log_backend = $config{''}->{log};
+
+    # this hash allows remapping of levels for specific logger types
+    my %level_map_of = (
+	log4perl => {
+	    'warning' => 'warn',
+	    'notice'  => 'warn',
+	}
+	);
+
+    if (exists $level_map_of{$log_backend}->{$level}) {
+	$level = $level_map_of{$log_backend}->{$level};
+    }
+    
+    if ($log_backend eq 'console') {
 	print STDERR "$level: $message\n";
-    } elsif ($config{''}->{log} eq 'syslog') {
+    } elsif ($log_backend eq 'syslog') {
 	# syslog should not be given FATAL priorities
 	syslog lc($level), '(' . $config{''}->{namespace} . ') ' . $message;
+    } elsif ($log_backend eq 'log4perl') {
+	eval {
+	    my $logger;
+
+	    if (! exists $config{''}->{log4perlconfig}) {
+		$logger = Log::Log4perl->get_logger();
+	    } else {
+		my $log_category = $config{''}->{log4perlcategory};
+		$logger = Log::Log4perl->get_logger($log_category);
+	    }
+	    if (defined $logger) {
+		$logger->$level($message);
+	    }
+	};
     }
 }
 
@@ -887,17 +916,31 @@ foreach my $section (keys %config) {
 	$config{$section}->{$key} = $entry;
     }
 }
+
 if ($options{dumpconfig}) {
-    print Dumper \%config; die;
+    print Dumper \%config; 
+    exit 0;
 }
 
-if ($config{''}->{log} !~ m{ \A (?:console|syslog) \z}xms) {
-    die "Invalid log configuration (expected: 'syslog' or 'console'). Stopped";
+if ($config{''}->{log} !~ m{ \A (?:console|syslog|log4perl) \z}xms) {
+    die "Invalid log configuration (expected: 'syslog', 'log4perl' or 'console'). Stopped";
 }
 
 if ($config{''}->{log} eq 'syslog') {
     openlog 'keynannyd', 'ndelay,pid', 'local0';
 }
+
+if ($config{''}->{log} eq 'log4perl') {
+    # simulate 'use Log::Log4perl qw(:easy)'
+    require Log::Log4perl;
+    Log::Log4perl->import();
+    if (! exists $config{''}->{log4perlconfig}) {
+	Log::Log4perl->easy_init();
+    } else {
+	Log::Log4perl::init($config{''}->{log4perlconfig});
+    }
+}
+
 
 ###########################################################################
 # prepare crypto tokens
