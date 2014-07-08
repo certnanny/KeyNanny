@@ -747,15 +747,20 @@ sub persist_decrypt {
 	log_error("None of the configured tokens can decrypt file $file");
 	return;
     } else {
+	my $printable_recipients = '';
       RECIPIENT_INFO:
 	foreach my $recipient (@{$recipient_info}) {
+	    if (length $printable_recipients) {
+		$printable_recipients .= '; ';
+	    }
+	    $printable_recipients .= 'Issuer: ' . $recipient->{issuer} . '/SerialNumber: ' . $recipient->{serialNumber};
 	    if (exists $crypto_token->{cert}->{issuer}->{ $recipient->{issuer} }) {
 		$token = $crypto_token->{cert}->{issuer}->{ $recipient->{issuer} }->{serial}->{ $recipient->{serialNumber} };
 	    }
 	    last RECIPIENT_INFO if defined $token;
 	}
 	if (! $token) {
-	    log_error("Recipient certificate (issuer: $recipient_info->{issuer}, serial number: $recipient_info->{serialNumber}) not available");
+	    log_error("Cannot decrypt $key - none of the recipient certificates are available to keynanny: $printable_recipients");
 	    return;
 	}
     }
@@ -830,7 +835,11 @@ sub process_request {
 
 	if (defined $data) {
 	    print $data;
+	} else {
+	    # could not get data from storage
+	    # TODO propagate error to client
 	}
+	
     } elsif ($cmd eq 'set') {
 	if (! $config{access}->{write}) {
 	    print "CLIENT_ERROR access denied\r\n";
