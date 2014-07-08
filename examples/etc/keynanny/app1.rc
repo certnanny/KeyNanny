@@ -1,12 +1,53 @@
-# optional startup script
-# (prepare local system for keynanny)
-# arguments to this script, passed by the init script: start, stop, restart
+#!/bin/bash
+# application specific startup script
+# use keynanny to render configuration file templates into temp file system
+# arguments to this script, passed by the init script: start, stop
+
+NAME=`basename $0 .rc`
+
+# customize the following settings according to application needs
+
+# keynanny socket file
+SOCKETFILE=/var/lib/keynanny/$NAME.socket
+
+# base configuration directory to scan for the application, change accordingly
+APPLICATION_CONF_DIR=/etc/$NAME
+
+# unix user the application is running as (owner of temp file system)
+APPLICATION_USER_ID=$NAME
+
+# temp file system directory which will be populated with rendered config files
+CREDENTIAL_DIR=/credentials/$NAME
+
+# temp file system directory root mode
+CREDENTIAL_DIR_MODE=0700
+
+# size of temp file system (in bytes, or use suffixes k for KB, m for MB, g for GB)
+CREDENTIAL_DIR_SIZE=16m
+
+# list of all config files belos APPLICATION_CONF_DIR to process
+TEMPLATES=`find $APPLICATION_CONF_DIR -type f -name '*.keynanny-template'`
+
 
 case "$1" in
     start)
+	if [ -n "$TEMPLATES" ] ; then
+	    umount $CREDENTIAL_DIR 2>/dev/null || true
+	    mkdir -p $CREDENTIAL_DIR
+	    mount -t tmpfs -o size=$CREDENTIAL_DIR_SIZE,mode=$CREDENTIAL_DIR_MODE,uid=$APPLICATION_USER_ID /dev/null $CREDENTIAL_DIR
+	    if [ $? != 0 ] ; then
+		echo "ERROR: could not mount temp file system"
+		exit 1
+	    fi
+	    for file in $TEMPLATES ; do
+		TARGETFILE=`basename $file .keynanny-template`
+		keynanny --socketfile $SOCKETFILE template $file --outfile $CREDENTIAL_DIR/$TARGETFILE
+		chown $APPLICATION_USER_ID $CREDENTIAL_DIR/$TARGETFILE
+		chmod 700 $CREDENTIAL_DIR/$TARGETFILE
+	    done
+	fi
 	;;
     stop)
-	;;
-    restart)
+	umount $CREDENTIAL_DIR 2>/dev/null || true
 	;;
 esac

@@ -4,6 +4,7 @@
 # keynanny implements a command line client for
 # - setting values
 # - getting values
+# - listing available keys
 # - rendering templates
 #
 # 2014-05-19 Martin Bartosch <m.bartosch@cynops.de>
@@ -15,8 +16,6 @@ use warnings;
 use Getopt::Long;
 use IO::Socket::UNIX;
 use Template;
-
-#use Template::Context;
 
 use Data::Dumper;
 use KeyNanny;
@@ -65,7 +64,7 @@ if ( $options{help} ) {
 # process configuration file
 $socketfile = $options{socketfile};
 
-my $kn = KeyNanny->new( socketfile => $socketfile ) or die "Error: $@";
+my $kn = KeyNanny->new( { socketfile => $socketfile } ) or die "Error: $@";
 
 my $cmd = shift;
 
@@ -88,8 +87,16 @@ elsif ( $cmd eq 'set' ) {
     die "Not yet implemented";
 
 }
+elsif ( $cmd eq 'list' ) {
+    print join("\n", $kn->list_vars());
+    print "\n";
+}
 elsif ( $cmd eq 'template' ) {
     my $infile = shift;
+
+    if (scalar @variables == 0) {
+	@variables = $kn->list_vars();
+    }
 
     if ( !process_template( $kn, $infile, $options{outfile}, \@variables ) ) {
         $rc = 1;

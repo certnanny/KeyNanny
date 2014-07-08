@@ -3,15 +3,155 @@
 # keynanny start script
 #
 
-DAEMON="keynanny"
+DAEMON="/usr/bin/keynannyd"
+CONFIG_DIR=/etc/keynanny/
+DESC="keynanny credential protection daemon"
+
+test -x $DAEMON || exit 0
+test -d $CONFIG_DIR || exit 0
+
+# Pre&Post empty function declaration, to be overriden from /lib/lsb/init-functions.d/*
+log_daemon_msg_pre () { :; }
+log_daemon_msg_post () { :; }
+log_end_msg_pre () { :; }
+log_end_msg_post () { :; }
+
+# will be overridden if defined in local lsb, otherwise use this stub (SuSE)
+log_daemon_msg() {
+    if [ -z "${1:-}" ]; then
+        return 1
+    fi
+    log_daemon_msg_pre "$@"
+
+    if [ -z "${2:-}" ]; then
+        /bin/echo -n "$1:" || true
+        return
+    fi
+
+    /bin/echo -n "$1: $2" || true
+    log_daemon_msg_post "$@"
+}
+
+# int log_end_message (int exitstatus)
+log_end_msg () {
+    # If no arguments were passed, return
+    if [ -z "${1:-}" ]; then
+        return 1
+    fi
+
+    local retval
+    retval=$1
+
+    log_end_msg_pre "$@"
+    if [ $1 -eq 0 ]; then
+        echo "." || true
+    elif [ $1 -eq 255 ]; then
+        /bin/echo -e " (warning)." || true
+    else
+        /bin/echo -e " failed!" || true
+    fi
+    log_end_msg_post "$@"
+    return $retval
+}
+
+. /lib/lsb/init-functions
+
+# get a config entry from keynanny configuration
+keynanny_get_config() {
+    local NAME=$1
+    local SECTION=$2
+    local ENTRY=$3
+
+    perl -e "`$DAEMON --config $CONFIG_DIR/$NAME.conf --dumpconfig`; print \$VAR1->{\"$SECTION\"}->{\"$ENTRY\"}"
+}
+
+start_keynanny() {
+    local NAME=$1
+    
+    # determine pid file from keynanny configuration
+    PID_FILE=`keynanny_get_config $NAME server pid_file`
+
+    DAEMONARG="--config $CONFIG_DIR/$NAME.conf"
+    STATUS=0
+
+    start-stop-daemon --start --quiet --oknodo --pidfile $PID_FILE --exec $DAEMON -- $DAEMONARG || STATUS=1
+
+    # call custom specific rc file
+    if [ $STATUS == 0 ] ; then
+	sleep 1
+	rc_keynanny $NAME start
+    fi
+}
+
+# checks if an rc file exists for the specified keynanny config and calls it
+rc_keynanny() {
+    local NAME=$1
+    local MODE=$2
+
+    if [ -x $CONFIG_DIR/$NAME.rc ] ; then
+	$CONFIG_DIR/$NAME.rc $MODE
+    fi
+}
+
+stop_keynanny() {
+    local NAME=$1
+
+    PID_FILE=`keynanny_get_config $NAME server pid_file`
+    if [ -r $PID_FILE ] ; then
+	# call custom specific rc file
+	rc_keynanny $NAME stop
+
+	kill `cat $PID_FILE` || true
+	rm -f $PID_FILE
+    fi
+}
+
 
 case "$1" in
     start)
-	echo -n "Starting $DAEMON "
-
+	#echo -n "Starting $DAEMON "
+	log_daemon_msg "Starting $DESC"
+	if [ -z "$2" ] ; then
+	    # start all configured keynanny instances
+	    for CONFIG in `cd $CONFIG_DIR; ls *.conf 2> /dev/null`; do
+		NAME=${CONFIG%%.conf}
+		start_keynanny $NAME
+	    done
+	else
+	    # start keynanny instances specified on command line
+	    while shift ; do
+		[ -z "$1" ] && break
+		if [ -r $CONFIG_DIR/$1.conf ] ; then
+		    start_keynanny $1
+		else
+		    log_failure_msg " no such keynanny: $1 "
+		    STATUS=1
+		fi
+	    done
+	fi
+	log_end_msg ${STATUS:-0}
 	;;
     stop)
-	echo -n "Stopping $DAEMON "
+	log_daemon_msg "Stopping $DESC"
+	if [ -z "$2" ] ; then
+	    # stop all configured keynanny instances
+	    for CONFIG in `cd $CONFIG_DIR; ls *.conf 2> /dev/null`; do
+		NAME=${CONFIG%%.conf}
+		stop_keynanny $NAME
+	    done
+	else
+	    # stop keynanny instances specified on command line
+	    while shift ; do
+		[ -z "$1" ] && break
+		if [ -r $CONFIG_DIR/$1.conf ] ; then
+		    stop_keynanny $1
+		else
+		    log_failure_msg " no such keynanny: $1 "
+		    STATUS=1
+		fi
+	    done
+	fi
+	log_end_msg 0
 	;;
     *)
 	echo "Usage: $0 {start|stop|restart}"

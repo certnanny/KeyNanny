@@ -1,32 +1,36 @@
 package KeyNanny;
-use Moose;
 
+use Carp;
 use IO::Socket::UNIX qw( SOCK_STREAM );
 
-has 'socketfile' => ( is => 'ro', required => 1 );
+sub new {
+    my $class = shift;
+    my $arg = shift;
 
-sub BUILD {
-    my $self = shift;
+    my $self = {};
 
-    my $file = $self->socketfile();
+    if (! defined $arg->{socketfile}) {
+	confess("No socketfile specified");
+    }
 
-    if ( not defined $file ) {
-        die "No socketfile defined. Stopped";
+    $self->{SOCKETFILE} = $arg->{socketfile};
+
+    if (! -r $self->{SOCKETFILE} ) {
+	confess("Socketfile $self->{SOCKETFILE} is not readable");
     }
-    elsif ( not -e $file ) {
-        die "Socketfile $file does not exist. Stopped";
+    if (! -w $self->{SOCKETFILE} ) {
+	confess("Socketfile $self->{SOCKETFILE} is not writable");
     }
-    elsif ( not( -r $file && -w $file ) ) {
-        die
-            "Socketfile $file is not accessible (permission problem?). Stopped";
-    }
-    return;
+
+    bless($self, $class);
+    return $self;
 }
 
 sub get_var {
     my $self       = shift;
     my $arg        = shift;
-    my $socketfile = $self->socketfile();
+
+    my $socketfile = $self->{SOCKETFILE};
 
     my $socket = IO::Socket::UNIX->new(
         Type => SOCK_STREAM,
@@ -47,5 +51,55 @@ sub get_var {
     return $result;
 }
 
-no Moose;
+sub set_var {
+    my $self       = shift;
+    my $arg        = shift;
+    my $value      = shift;
+
+    my $socketfile = $self->{SOCKETFILE};
+
+    my $socket = IO::Socket::UNIX->new(
+        Type => SOCK_STREAM,
+        Peer => $socketfile
+    ) or die "Cannot connect to server: $!. Stopped";
+
+    if ( !defined $socket ) {
+        die "Could not open socket $socketfile. Stopped";
+    }
+
+    print $socket 'set ' . $arg . "\r\n";
+    print $socket $value;
+    $socket->close;
+
+    return $result;
+}
+
+sub list_vars {
+    my $self       = shift;
+    my $arg        = shift;
+
+    my $socketfile = $self->{SOCKETFILE};
+
+    my $socket = IO::Socket::UNIX->new(
+        Type => SOCK_STREAM,
+        Peer => $socketfile
+    ) or die "Cannot connect to server: $!. Stopped";
+
+    if ( !defined $socket ) {
+        die "Could not open socket $socketfile. Stopped";
+    }
+
+    print $socket "list\r\n";
+
+    my @result;
+    while (my $line = <$socket>) {
+	chomp $line;
+	$line =~ s/\s*$//g;
+	push @result, $line;
+    }
+    $socket->close;
+
+    return @result;
+}
+
 1;

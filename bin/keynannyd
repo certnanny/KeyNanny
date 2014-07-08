@@ -43,7 +43,7 @@ my %config = (
 	proto => 'unix',
 	socket_file => '$(namespace).socket',
 	background => 1,
-	max_servers => 5,
+	max_servers => 3,
     },
     access => {
 	read => 1,
@@ -803,7 +803,8 @@ sub process_request {
 
     # make sure to sanitize $arg: only word characters allowed in order to prevent
     # attacks (e. g. shell escape or directory traversals)
-    my ($cmd, $arg) = ($line =~ m{ \A (\w+) \s+ (\w+) \z }xms);
+    my ($cmd, $arg) = ($line =~ m{ \A (\w+) \s* (\w*) }xms);
+
     if (! defined $cmd) {
 	print "CLIENT_ERROR invalid syntax\r\n";
 	return;
@@ -812,6 +813,7 @@ sub process_request {
     if ($cmd eq 'get') {
 	if (! $config{access}->{read}) {
 	    print "CLIENT_ERROR access denied\r\n";
+	    return;
 	}
 
 	my $data = cache_retrieve($arg);
@@ -832,6 +834,7 @@ sub process_request {
     } elsif ($cmd eq 'set') {
 	if (! $config{access}->{write}) {
 	    print "CLIENT_ERROR access denied\r\n";
+	    return;
 	}
 
 	# clear input separator (allow binary data)
@@ -846,6 +849,20 @@ sub process_request {
 	    print "STORED\r\n";
 	} else {
 	    print "NOT_STORED\r\n";
+	}
+    } elsif ($cmd eq 'list') {
+	if (! $config{access}->{read}) {
+	    print "CLIENT_ERROR access denied\r\n";
+	    return;
+	}
+
+	my $storage_path = $config{storage}->{dir};
+	opendir(my $dh, $storage_path);
+	if (defined $dh) {
+	    my @files = readdir($dh);
+	    print join("\r\n", grep { ! m{ \A \.\.? \z }xms } @files);
+	    print "\r\n";
+	    closedir $dh;
 	}
     } else {
 	print "ERROR\r\n";
