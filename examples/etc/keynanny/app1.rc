@@ -43,7 +43,7 @@ case "$1" in
 		TARGETFILE=`basename $file .keynanny-template`
 		keynanny --socketfile $SOCKETFILE template $file --outfile $CREDENTIAL_DIR/$TARGETFILE
 		chown $APPLICATION_USER_ID $CREDENTIAL_DIR/$TARGETFILE
-		chmod 700 $CREDENTIAL_DIR/$TARGETFILE
+		chmod 600 $CREDENTIAL_DIR/$TARGETFILE
 	    done
 	fi
 	;;
