@@ -18,6 +18,7 @@ use Carp;
 use Data::Dumper;
 use File::Spec;
 use File::Path;
+use File::Temp;
 use Sys::Syslog;
 
 # optional: only required in lazy mode
@@ -685,21 +686,58 @@ sub _decrypt {
     my $token = shift;
     my $file = shift;
 
-    my $cert_file = $token->{certificate};
-    my $key_file  = $token->{key};
-    my $key_pass  = $token->{passphrase};
+    my @openssl_args = qw( smime -decrypt -inform pem );
+    push @openssl_args, '-in', qq( $file );
+    push @openssl_args, '-recip', qq( $token->{certificate} );
+    push @openssl_args, '-inkey', qq( $token->{key} );
 
-    my $key_args = '';
-    if (defined $key_pass) {
-	$key_args = '-passin env:PW';
-	$ENV{PW} = $key_pass;
+    if (defined $token->{passphrase}) {
+	push @openssl_args, qw( -passin env:PW );
+	$ENV{PW} = $token->{passphrase};
     }
-    
-    my $cmd = "openssl smime -decrypt -in $file -inform pem -recip $cert_file -inkey $key_file $key_args";
-    open my $handle, "$cmd |";
+
+    my $config_file;
+    if (defined $token->{engine}) {
+	push @openssl_args, qw( -keyform engine );
+	push @openssl_args, '-engine', $token->{engine};
+
+	# write openssl config if engine config is found
+	my $engine_section = $token->{openssl_engine_config};
+	if (defined $engine_section) {
+	    if (! defined $config{$engine_section}) {
+		log_error("Invalid engine section $engine_section referenced in token configuration");
+		# trying to continue anyway
+	    } else {
+		my $fh = new File::Temp(
+					UNLINK => 0,
+					TEMPLATE => '/tmp/openssl-kn-engine-XXXXXXXX',
+					);
+		$config_file = $fh->filename;
+
+		print $fh "openssl_conf = openssl_def\n";
+		print $fh "[ openssl_def ]\n";
+		print $fh "engines = engine_section\n";
+		print $fh "[ engine_section ]\n";
+		print $fh $token->{engine} . " = engine_config\n";
+		print $fh "[ engine_config ]\n";
+
+	        foreach my $key (keys %{$config{$engine_section}}) {
+		    print $fh "$key = $config{$engine_section}->{$key}\n";
+		}
+		close $fh;
+
+		$ENV{OPENSSL_CONF} = $config_file;
+		log_debug("Wrote openssl config file $config_file");
+	    }
+	}
+    }
+
+    open my $handle, join(' ', 'openssl', @openssl_args) .  '|';
     if (! $handle) {
-	log_error("Error running command: $cmd");
+	log_error("Error running command: openssl " . join(' ', @openssl_args));
 	delete $ENV{PW};
+	delete $ENV{OPENSSL_CONF};
+	unlink $config_file if (defined $config_file && -e $config_file);
 	return;
     }
     local $/;
@@ -707,9 +745,11 @@ sub _decrypt {
     close $handle;
 
     delete $ENV{PW};
+    delete $ENV{OPENSSL_CONF};
+    unlink $config_file if (defined $config_file && -e $config_file);
 
     if ($? != 0) {
-	log_error("Error running command (non-zero return code): $cmd");
+	log_error("Error running command (non-zero return code): openssl " . join(' ', @openssl_args));
 	return;
     }
 
@@ -1104,6 +1144,4 @@ if ($EUID != 0) {
     $server_config->{group} = $EGID;
 }
 
-my $server = KeyNanny->new($server_config);
-
-$server->run();
+KeyNanny->run(%{ $server_config });
