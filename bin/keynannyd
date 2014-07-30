@@ -145,11 +145,15 @@ sub get_random_bytes {
 	close $handle;
     } else {
 	my $openssl = $config{crypto}->{openssl};
-	my $cmd = "$openssl rand $arg";
-	open my $handle, "$cmd |";
+	my $cmdline = "$openssl rand $arg";
+	open my $handle, "$cmdline |";
 	if (! $handle) {
-	    log_fatal("Error running command: $cmd");
-	    die "Error running command: $cmd";
+	    log_fatal("Error running command: $cmdline");
+	    die "Error running command: $cmdline";
+	}
+	if ($? != 0) {
+	    log_fatal("Could not generate random data using openssl");
+	    die "Could not genate random data using openssl";
 	}
 	read $handle, $value, $arg;
 	close $handle;
@@ -295,6 +299,8 @@ sub read_tokens {
 	my $notbefore = $token->{certinfo}->{NotBefore};
 	my $notafter = $token->{certinfo}->{NotAfter};
 	my $fingerprint = $token->{certinfo}->{CertificateFingerprint};
+
+	log_info("Token $id subject: $subject");
 
 	# identify latest certificate (to be used for new encryption)
 	if ($notbefore > $max_notbefore) {
@@ -566,10 +572,19 @@ sub get_cms_recipient_info {
 	return;
     }
 
-    my $cmd = "$openssl cms -in $arg -inform pem -cmsout -print";
-    open my $handle, "$cmd |";
+    my @cmd = (
+	qq( $openssl ),
+	'cms',
+	'-in', qq( $arg ),
+	'-inform', 'pem',
+	'-cmsout', '-print',
+	);
+	
+    
+    my $cmdline = join(' ', @cmd);
+    open my $handle, "$cmdline 2>/dev/null |";
     if (! $handle) {
-	log_error("Error running command: $cmd");
+	log_error("Error running command: $cmdline");
 	return;
     }
 
@@ -637,6 +652,8 @@ sub persist_encrypt {
 	return;
     }
 
+    my $openssl = $config{crypto}->{openssl};
+
     my $current_token = $crypto_token->{current_token};
     if (! defined $current_token) {
 	log_fatal("No usable encryption token configured");
@@ -665,17 +682,28 @@ sub persist_encrypt {
 
     log_debug("Storing data in CMS file $file");
 
-    my $cmd = "openssl smime -encrypt -binary -aes256 -out $file -outform pem $cert_file";
-    open my $handle, "| $cmd";
+    my @cmd = (
+	qq( $openssl ),
+	'smime', 
+	'-encrypt',
+	'-binary',
+	'-aes256',
+	'-out', qq( $file ),
+	'-outform', 'pem',
+	qq( $cert_file ),
+	);
+
+    my $cmdline = join(' ', @cmd);
+    open my $handle, "| $cmdline";
     if (! $handle) {
-	log_error("Error running command: $cmd");
+	log_error("Error running command: $cmdline");
 	return;
     }
     print $handle $value;
     close $handle;
 
     if ($? != 0) {
-	log_error("Error running command (non-zero return code): $cmd");
+	log_error("Error running command (non-zero return code): $cmdline");
 	return;
     }
     return 1;
@@ -686,21 +714,30 @@ sub _decrypt {
     my $token = shift;
     my $file = shift;
 
-    my @openssl_args = qw( smime -decrypt -inform pem );
-    push @openssl_args, '-in', qq( $file );
-    push @openssl_args, '-recip', qq( $token->{certificate} );
-    push @openssl_args, '-inkey', qq( $token->{key} );
+    my $openssl = $config{crypto}->{openssl};
+
+    my @cmd = (
+	qq( $openssl ),
+	'smime',
+	'-decrypt',
+	'-inform', 'pem',
+	'-in', qq( $file ),
+	'-recip', qq( $token->{certificate} ),
+	'-inkey', qq( $token->{key} ),
+	);
 
     if (defined $token->{passphrase}) {
-	push @openssl_args, qw( -passin env:PW );
+	push @cmd, 
+	'-passin', 'env:PW';
 	$ENV{PW} = $token->{passphrase};
     }
 
     my $config_file;
     if (defined $token->{engine}) {
-	push @openssl_args, qw( -keyform engine );
-	push @openssl_args, '-engine', $token->{engine};
-
+	push @cmd,
+	'-keyform', 'engine',
+	'-engine', $token->{engine};
+	
 	# write openssl config if engine config is found
 	my $engine_section = $token->{openssl_engine_config};
 	if (defined $engine_section) {
@@ -732,9 +769,10 @@ sub _decrypt {
 	}
     }
 
-    open my $handle, join(' ', 'openssl', @openssl_args) .  '|';
+    my $cmdline = join(' ', @cmd);
+    open my $handle, $cmdline . '|';
     if (! $handle) {
-	log_error("Error running command: openssl " . join(' ', @openssl_args));
+	log_error("Error running command: $cmdline");
 	delete $ENV{PW};
 	delete $ENV{OPENSSL_CONF};
 	unlink $config_file if (defined $config_file && -e $config_file);
@@ -749,7 +787,7 @@ sub _decrypt {
     unlink $config_file if (defined $config_file && -e $config_file);
 
     if ($? != 0) {
-	log_error("Error running command (non-zero return code): openssl " . join(' ', @openssl_args));
+	log_error("Error running command (non-zero return code): $cmdline");
 	return;
     }
 
@@ -768,7 +806,7 @@ sub persist_decrypt {
     my $storage_path = $config{storage}->{dir};
     my $file = File::Spec->catfile($storage_path, $key);
 
-    log_debug("Retrieving data from CMS file $file");
+    log_debug("Key '$key': Retrieving data from CMS file $file");
 
     my $recipient_info = get_cms_recipient_info($file);
     my $token;
@@ -780,11 +818,11 @@ sub persist_decrypt {
 	    $token = $crypto_token->{cert}->{fingerprint}->{$fingerprint};
 	    my $result = _decrypt($token, $file);
 	    if (defined $result) {
-		log_info("Found suitable decryption token for $file");
+		log_info("Key '$key': found suitable decryption token");
 		return $result;
 	    }
 	}
-	log_error("None of the configured tokens can decrypt file $file");
+	log_error("Key '$key': none of the configured tokens can decrypt file $file");
 	return;
     } else {
 	my $printable_recipients = '';
@@ -800,7 +838,7 @@ sub persist_decrypt {
 	    last RECIPIENT_INFO if defined $token;
 	}
 	if (! $token) {
-	    log_error("Cannot decrypt $key - none of the recipient certificates are available to keynanny: $printable_recipients");
+	    log_error("Key '$key': cannot decrypt entry, none of the recipient certificates are available to keynanny: $printable_recipients");
 	    return;
 	}
     }
@@ -924,7 +962,7 @@ sub process_request {
 GetOptions(\%options,
 	   'config=s',
 	   'dumpconfig',
-	   'debug',
+	   'check',
 	   'help');
 
 if ($options{help}) {
@@ -933,6 +971,10 @@ if ($options{help}) {
 }
 
 ###########################################################################
+
+# return code, only used when not running as daemon (--check)
+my $rc = 0;
+
 # process configuration file
 read_config($options{config}, %config);
 
@@ -986,6 +1028,12 @@ foreach my $section (keys %config) {
 if ($options{dumpconfig}) {
     print Dumper \%config; 
     exit 0;
+}
+
+# if check mode is required log to console and do not cache
+if ($options{check}) {
+    $config{''}->{log} = 'console';
+    $config{''}->{cache_strategy} = 'preload';
 }
 
 if ($config{''}->{log} !~ m{ \A (?:console|syslog|log4perl) \z}xms) {
@@ -1042,15 +1090,24 @@ if (! -d $storage_path) {
 
 ###########################################################################
 # initialize caching
-if ($config{''}->{cache_strategy} eq 'preload') {
+if ($config{''}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xms) {
     # read all secrets in one go
+    #
+    # available strategies:
+    # preload
+    #   try to load all secrets, abort if there is at least one secret
+    #   that is inaccessible
+    #
+    # preload-relaxed
+    #   try to load all secrets, ignore secrets that cannot be unlocked
 
     opendir(my $dh, $storage_path);
     if (! defined $dh) {
 	die "Could not scan storage directory $storage_path. Stopped";
     }
 
-    log_info("Scanning $storage_path for encrypted data objects");
+    log_debug("Scanning $storage_path for encrypted data objects");
+    my $nok = 0;
   DIR_ENTRY:
     while (my $entry  = readdir $dh) {
 	next DIR_ENTRY if (($entry eq '.') || ($entry eq '..'));
@@ -1059,13 +1116,22 @@ if ($config{''}->{cache_strategy} eq 'preload') {
 	    my $data = persist_decrypt($entry);
 	    if (defined $data) {
 		$cache->{$namespace}->{$entry} = $data;
-		log_info("Cached $entry");
+		log_info("Key '$entry: successfully decrypted and cached");
 	    } else {
-		log_info("Could not decrypt $entry (unavailable)");
+		log_warn("Key '$entry': unable to decrypt entry (token unavailable)");
+		$nok++;
 	    }
 	}
     }
     closedir $dh;
+
+    if ($nok) {
+	log_warn("Unable to decrypt $nok entries");
+	if ($config{''}->{cache_strategy} eq 'preload') {
+	    log_error("Strict checking enabled, exiting due to errors");
+	    exit 1;
+	}
+    }
 } elsif ($config{''}->{cache_strategy} eq 'memcache') {
     ###########################################################################
     # prepare memcached connection
@@ -1113,6 +1179,11 @@ if ($config{''}->{cache_strategy} eq 'preload') {
 
 } else {
     die "Invalid cache strategy (expected: 'memcache' or 'preload'). Stopped";
+}
+
+if ($options{check}) {
+    log_info("Check finished. Exiting.");
+    exit $rc;
 }
 
 
