@@ -1178,7 +1178,7 @@ if ($config{''}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xms) {
     }
 
 } else {
-    die "Invalid cache strategy (expected: 'memcache' or 'preload'). Stopped";
+    die "Invalid cache strategy (expected: 'memcache', 'preload' or 'preload-relaxed'). Stopped";
 }
 
 if ($options{check}) {
