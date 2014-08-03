@@ -18,7 +18,6 @@ use strict;
 use warnings;
 
 use Getopt::Long;
-use IO::Socket::UNIX;
 use Template;
 
 use Data::Dumper;
@@ -57,6 +56,28 @@ sub process_template {
     return 1;
 }
 
+sub error_msg {
+    my $result = shift;
+    my $arg = shift;
+
+    if (defined $arg) {
+	print STDERR $arg . ' ';
+    }
+    return unless defined $result;
+    return unless (ref $result eq 'HASH');
+    return unless (defined $result->{STATUS});
+    return 1 if ($result->{STATUS} eq 'OK');
+
+    my $msg = '(' . $result->{STATUS};
+    if (defined $result->{MESSAGE}) {
+	$msg .= ': ' . $result->{MESSAGE};
+    }
+    $msg .= ')';
+
+    print STDERR $msg . "\n";
+    return 1;
+}
+
 GetOptions( \%options, 'socketfile=s', 'variable=s@', 'outfile=s', 'help' );
 
 if ( $options{help} ) {
@@ -82,26 +103,55 @@ if ( !defined $cmd ) {
 my $rc = 0;
 if ( $cmd eq 'get' ) {
     my $arg = shift;
+    if (defined $arg) {
+	my $result = $kn->get_var($arg);
 
-    print $kn->get_var($arg);
-
-}
-elsif ( $cmd eq 'set' ) {
+	if ($result->{STATUS} eq 'OK') {
+	    print $result->{DATA};
+	} else {
+	    error_msg($result, 'Could not get key');
+	    $rc = 1;
+	}
+    } else {
+	print STDERR "Missing argument for get operation\n";
+	$rc = 1;
+    }
+} elsif ( $cmd eq 'set' ) {
     my $arg = shift;
-    die "Not yet implemented";
+    my $value = shift;
 
-}
-elsif ( $cmd eq 'list' ) {
-    print join("\n", $kn->list_vars());
-    print "\n";
-}
-elsif ( $cmd eq 'template' ) {
+    if (! defined $value) {
+	print STDERR "No value specified (use - for STDIN)\n";
+	$rc = 1;
+    } elsif ($value eq '-') {
+	local $/;
+	$value = <STDIN>;
+    }
+    if (defined $value) {
+	my $result = $kn->set_var($arg, $value);
+	if ($result->{STATUS} ne 'OK') {
+	    error_msg($result, 'Could not set key');
+	    $rc = 1;
+	}
+    }
+} elsif ( $cmd eq 'list' ) {
+    my $result = $kn->list_vars();
+    if ($result->{STATUS} eq 'OK') {
+	print join("\n", @{$result->{KEYS}}) . "\n";
+    } else {
+	error_msg($result, "Could not get list of keys");
+	$rc = 1;
+    }
+} elsif ( $cmd eq 'template' ) {
     my $infile = shift;
 
     if (scalar @variables == 0) {
-	@variables = $kn->list_vars();
+	my $result = $kn->list_vars();
+	if ($result->{STATUS} eq 'OK') {
+	    @variables = @{$result->{KEYS}};
+	}
     }
-
+    
     if ( !process_template( $kn, $infile, $options{outfile}, \@variables ) ) {
         $rc = 1;
     }

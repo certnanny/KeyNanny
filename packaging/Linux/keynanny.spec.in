@@ -54,6 +54,7 @@ rm -rf $RPM_BUILD_ROOT
 
 PERLLIBPATH/KeyNanny.pm
 PERLLIBPATH/KeyNanny/Connector.pm
+PERLLIBPATH/KeyNanny/Protocol.pm
 
 %attr(-, root, keynanny) %dir /var/lib/keynanny
 %attr(-, root, keynanny) /var/lib/keynanny/examples/etc/keynanny/app1.conf

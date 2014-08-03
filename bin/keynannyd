@@ -29,6 +29,8 @@ use Sys::Syslog;
 # use Cache::Memcached;
 # use Crypt::CBC;
 
+use KeyNanny::Protocol;
+
 use base qw( Net::Server::PreForkSimple );
 
 my %options = (
@@ -48,6 +50,7 @@ my %config = (
 	proto => 'unix',
 	socket_file => '$(namespace).socket',
 	background => 1,
+	setsid => 1,
 	max_servers => 3,
     },
     access => {
@@ -59,6 +62,7 @@ my %config = (
 
 my $server_config;
 my $namespace;
+my $protocol;
 my $memd;
 my $instance_cipher;
 my $crypto_token;
@@ -183,7 +187,8 @@ sub cache_store {
     my $namespace = $config{''}->{namespace};
 
     # local caching first
-    $cache->{$namespace}->{$arg} = $data;
+    $cache->{$namespace}->{$arg}->{data} = $data;
+    $cache->{$namespace}->{$arg}->{mtime} = time();
 
     # memcache
     if (defined $memd) {
@@ -202,8 +207,8 @@ sub cache_retrieve {
     my $namespace = $config{''}->{namespace};
 
     # local caching first
-    if (exists $cache->{$namespace}->{$arg}) {
-	return $cache->{$namespace}->{$arg};
+    if (exists $cache->{$namespace}->{$arg}->{data}) {
+	return $cache->{$namespace}->{$arg}->{data};
     }
 
     # fallback to memcache
@@ -386,7 +391,7 @@ sub getcertinfo {
     my @cmd = (qq("$openssl"),
 	       'x509',
 	       '-in',
-	       $arg,
+	       qq( $arg ),
 	       '-inform',
 	       'pem',
 	       '-text',
@@ -880,83 +885,186 @@ sub restart_open_hook {
 sub process_request {
     my $self = shift;
 
-    # read one command line
-    my $line = <STDIN>;
-    return if (! defined $line);
+    my $protocol = KeyNanny::Protocol->new();
 
-    $line =~ s/[\r\n]+$//;
+    my $request = $protocol->receive_command();
 
-    log_debug('Incoming request ' . $line );
-
-    # make sure to sanitize $arg: only word characters allowed in order to prevent
-    # attacks (e. g. shell escape or directory traversals)
-    my ($cmd, $arg) = ($line =~ m{ \A (\w+) \s* (\w*) }xms);
-
-    if (! defined $cmd) {
-	print "CLIENT_ERROR invalid syntax\r\n";
+    if (! defined $request->{CMD}) {
+	$protocol->send_response(
+	    {
+		STATUS => 'CLIENT_ERROR',
+		MESSAGE => 'invalid command syntax',
+	    });
 	return;
     }
 
-    if ($cmd eq 'get') {
+    log_debug('Incoming request ' . $request->{CMD} . '(' . join(', ', @{$request->{ARG}}) . ')');
+
+    if ($request->{CMD} eq 'get') {
 	if (! $config{access}->{read}) {
-	    print "CLIENT_ERROR access denied\r\n";
+	    $protocol->send_response(
+		{
+		    STATUS => 'SERVER_ERROR',
+		    MESSAGE => 'read access denied',
+		});
 	    return;
 	}
 
-	my $data = cache_retrieve($arg);
+      GET_ARG:
+	foreach my $arg (@{$request->{ARG}}) {
+	    if ($arg !~ m{ \A (\w+) \z }xms) {
+		$protocol->send_response(
+		    {
+			STATUS => 'CLIENT_ERROR',
+			MESSAGE => 'invalid argument (alphanumeric only)',
+		    });
+		next GET_ARG;
+	    }
 
-	if (! defined $data) {
-	    # cache miss, get data from persistent store
-	    if (persist_exists($arg)) {
-		$data = persist_decrypt($arg);
-	    
-		# cache retrieved value for later use
-		cache_store($arg, $data);
+	    my $data = cache_retrieve($arg);
+
+	    if (! defined $data) {
+		# cache miss, get data from persistent store
+		if (persist_exists($arg)) {
+		    $data = persist_decrypt($arg);
+		    
+		    # cache retrieved value for later use
+		    cache_store($arg, $data);
+		}
+	    }
+
+	    if (defined $data) {
+		$protocol->send_response(
+		    {
+			STATUS => 'OK',
+			MESSAGE => length($data),
+			DATA => $data,
+			BINARY => 1,
+		    });
+	    } else {
+		$protocol->send_response(
+		    {
+			STATUS => 'SERVER_ERROR',
+			MESSAGE => 'entry not available',
+		    });
+		next GET_ARG;
 	    }
 	}
+    } elsif ($request->{CMD} eq 'set') {
+	if (! $config{access}->{write}) {
+	    $protocol->send_response(
+		{
+		    STATUS => 'SERVER_ERROR',
+		    MESSAGE => 'write access denied',
+		});
+	    return;
+	}
+
+	if (scalar @{$request->{ARG}} != 2) {
+	    $protocol->send_response(
+		{
+		    STATUS => 'SERVER_ERROR',
+		    MESSAGE => 'invalid number or arguments',
+		});
+	    return;
+	}
+
+	my $arg = $request->{ARG}->[0];
+	if ($arg !~ m{ \A (\w+) \z }xms) {
+	    $protocol->send_response(
+		{
+		    STATUS => 'CLIENT_ERROR',
+		    MESSAGE => 'invalid argument key: alphanumeric only',
+		});
+	    next GET_ARG;
+	}
+	my $length = $request->{ARG}->[1];
+	if ($length !~ m{ \A (\d+) \z }xms) {
+	    $protocol->send_response(
+		{
+		    STATUS => 'CLIENT_ERROR',
+		    MESSAGE => 'invalid argument length: numeric only',
+		});
+	    next GET_ARG;
+	}
+
+	# read payload
+	my $data = $protocol->receive(
+	    {
+		LENGTH => $length, 
+	    });
 
 	if (defined $data) {
-	    print $data;
+	    # persist value
+	    if (persist_encrypt($arg, $data)) {
+		
+		# and cache it
+		cache_store($arg, $data);
+		$protocol->send_response(
+		    {
+			STATUS => 'OK',
+		    });
+	    } else {
+		# read() did not succeed
+		$protocol->send_response(
+		    {
+			STATUS => 'SERVER_ERROR',
+			MESSAGE => 'communication error',
+		    });
+		return;
+	    }
 	} else {
-	    # could not get data from storage
-	    # TODO propagate error to client
-	}
-	
-    } elsif ($cmd eq 'set') {
-	if (! $config{access}->{write}) {
-	    print "CLIENT_ERROR access denied\r\n";
+	    $protocol->send_response(
+		{
+		    STATUS => 'SERVER_ERROR',
+		    MESSAGE => 'entry not stored',
+		});
 	    return;
 	}
-
-	# clear input separator (allow binary data)
-	local $/;
-	my $data = <STDIN>;
-	
-	# persist value
-	if (persist_encrypt($arg, $data)) {
-
-	    # and cache it
-	    cache_store($arg, $data);
-	    print "STORED\r\n";
-	} else {
-	    print "NOT_STORED\r\n";
-	}
-    } elsif ($cmd eq 'list') {
+    } elsif ($request->{CMD} eq 'list') {
 	if (! $config{access}->{read}) {
-	    print "CLIENT_ERROR access denied\r\n";
+	    $protocol->send_response(
+		{
+		    STATUS => 'SERVER_ERROR',
+		    MESSAGE => 'read access denied',
+		});
 	    return;
 	}
 
+	my @entries;
 	my $storage_path = $config{storage}->{dir};
 	opendir(my $dh, $storage_path);
 	if (defined $dh) {
-	    my @files = readdir($dh);
-	    print join("\r\n", grep { ! m{ \A \.\.? \z }xms } @files);
-	    print "\r\n";
+	  ENTRY:
+	    foreach my $file (readdir($dh)) {
+		next ENTRY if ($file eq '.' || $file eq '..');
+		push @entries, $file;
+	    }
 	    closedir $dh;
+	} else {
+	    $protocol->send_response(
+		{
+		    STATUS => 'SERVER_ERROR',
+		    MESSAGE => 'cannot access storage',
+		});
+	    return;
 	}
+	
+	my $data = join("\r\n", @entries);
+	$protocol->send_response(
+	    {
+		STATUS => 'OK',
+		MESSAGE => length($data),
+		DATA => $data,
+		BINARY => 1,
+	    });
     } else {
-	print "ERROR\r\n";
+	$protocol->send_response(
+	    {
+		STATUS => 'CLIENT_ERROR',
+		MESSAGE => 'unknown command',
+	    });
+	return;
     }
 }
 
@@ -1119,7 +1227,7 @@ if ($config{''}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xms) {
 	if (persist_exists($entry)) {
 	    my $data = persist_decrypt($entry);
 	    if (defined $data) {
-		$cache->{$namespace}->{$entry} = $data;
+		$cache->{$namespace}->{$entry}->{data} = $data;
 		log_info("Key '$entry: successfully decrypted and cached");
 	    } else {
 		log_warn("Key '$entry': unable to decrypt entry (token unavailable)");
@@ -1164,7 +1272,7 @@ if ($config{''}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xms) {
 
     my $openssl = $config{crypto}->{openssl};
     if (! -x $openssl) {
-	confess "Could not execute openssl at $openssl. Stopped";
+	confess "Could not execute openssl at $openssl";
     }
 
     require Crypt::CBC;
