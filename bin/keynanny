@@ -21,7 +21,7 @@ use Getopt::Long;
 use Template;
 
 use Data::Dumper;
-use KeyNanny;
+use KeyNanny::Protocol;
 
 my %options = ();
 
@@ -48,7 +48,7 @@ sub process_template {
 
     my $vars = {};
     foreach my $entry ( @{$variables} ) {
-        $vars->{$entry} = $kn->get_var($entry);
+        $vars->{$entry} = $kn->get($entry);
     }
 
     $template->process( \$input, $vars, $outfile ) || die $template->error();
@@ -89,7 +89,7 @@ if ( $options{help} ) {
 # process configuration file
 $socketfile = $options{socketfile};
 
-my $kn = KeyNanny->new( { socketfile => $socketfile } ) or die "Error: $@";
+my $kn = KeyNanny::Protocol->new( { SOCKETFILE => $socketfile } ) or die "Error: $@";
 
 my $cmd = shift;
 
@@ -104,7 +104,7 @@ my $rc = 0;
 if ( $cmd eq 'get' ) {
     my $arg = shift;
     if (defined $arg) {
-	my $result = $kn->get_var($arg);
+	my $result = $kn->get($arg);
 
 	if ($result->{STATUS} eq 'OK') {
 	    print $result->{DATA};
@@ -128,14 +128,14 @@ if ( $cmd eq 'get' ) {
 	$value = <STDIN>;
     }
     if (defined $value) {
-	my $result = $kn->set_var($arg, $value);
+	my $result = $kn->set($arg, $value);
 	if ($result->{STATUS} ne 'OK') {
 	    error_msg($result, 'Could not set key');
 	    $rc = 1;
 	}
     }
 } elsif ( $cmd eq 'list' ) {
-    my $result = $kn->list_vars();
+    my $result = $kn->list();
     if ($result->{STATUS} eq 'OK') {
 	print join("\n", @{$result->{KEYS}}) . "\n";
     } else {
@@ -146,7 +146,7 @@ if ( $cmd eq 'get' ) {
     my $infile = shift;
 
     if (scalar @variables == 0) {
-	my $result = $kn->list_vars();
+	my $result = $kn->list();
 	if ($result->{STATUS} eq 'OK') {
 	    @variables = @{$result->{KEYS}};
 	}

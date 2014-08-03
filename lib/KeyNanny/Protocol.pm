@@ -10,8 +10,12 @@ package KeyNanny::Protocol;
 
 use strict;
 use warnings;
+
+use IO::Socket::UNIX qw( SOCK_STREAM );
 use Data::Dumper;
 use Carp;
+
+use base qw( KeyNanny );
 
 sub new {
     my $class = shift;
@@ -21,6 +25,35 @@ sub new {
 
     if ($arg->{SOCKET}) {
 	$self->{SOCKET} = $arg->{SOCKET};
+    }
+
+    # note: SOCKET and SOCKETFILE are optional, if both are missing the class uses STDIN and STDOUT
+    if ($arg->{SOCKETFILE}) {
+	if ($self->{SOCKET}) {
+	    confess "SOCKET and SOCKETFILE are mutually exclusive as initializing arguments to KeyNanny::Protocol";
+	}
+
+	if (! defined $arg->{SOCKETFILE}) {
+	    confess("No socketfile specified");
+	}
+
+	$self->{SOCKETFILE} = $arg->{SOCKETFILE};
+	
+	if (! -r $self->{SOCKETFILE} ) {
+	    confess("Socketfile $self->{SOCKETFILE} is not readable");
+	}
+	if (! -w $self->{SOCKETFILE} ) {
+	    confess("Socketfile $self->{SOCKETFILE} is not writable");
+	}
+
+	$self->{SOCKET} = IO::Socket::UNIX->new(
+	    Type => SOCK_STREAM,
+	    Peer => $self->{SOCKETFILE},
+	    ) or confess "Cannot connect to server: $!";
+
+	if ( !defined $self->{SOCKET} ) {
+	    confess "Could not open socket $self->{SOCKETFILE}";
+	}
     }
 
     bless($self, $class);
@@ -186,6 +219,59 @@ sub receive_response {
     }
     
     return $result;
+}
+
+###########################################################################
+# high level methods, may be used by KeyNanny clients
+sub get {
+    my $self       = shift;
+    my $arg        = shift;
+
+    $self->send_command(
+	{
+	    CMD => 'get',
+	    ARG => [ $arg ],
+	});
+
+    return $self->receive_response();
+}
+
+sub set {
+    my $self       = shift;
+    my $key        = shift;
+    my $value      = shift;
+
+    $self->send_command(
+	{
+	    CMD => 'set',
+	    ARG => [ $key, length($value) ],
+	});
+
+    my $rc = $self->send(
+	{
+	    DATA   => $value,
+	    BINARY => 1,
+	});
+
+    return $self->receive_response();
+}
+
+sub list {
+    my $self       = shift;
+
+    $self->send_command(
+	{
+	    CMD => 'list',
+	    ARG => [  ],
+	});
+    my $result = $self->receive_response();
+
+    # convenience: return listed keys as arrayref
+    if ($result->{STATUS} eq 'OK') {
+	$result->{KEYS} = [ split(/\s+/, $result->{DATA}) ];
+    }
+    return $result;
+
 }
 
 1;
