@@ -15,15 +15,17 @@ use strict;
 use warnings;
 use English;
 
+use Carp;
 use Getopt::Long;
 use Config::Std;
 use Pod::Usage;
-use Carp;
-use Data::Dumper;
 use File::Spec;
 use File::Path;
 use File::Temp;
 use Sys::Syslog;
+use Math::BigInt;
+
+use Data::Dumper;
 
 # optional: only required in lazy mode
 # use Cache::Memcached;
@@ -447,9 +449,6 @@ sub getcertinfo {
 	$state = "CRLDISTRIBUTIONPOINTS" if (/X509v3 CRL Distribution Points:/);
 
 	if ($state eq "DATA") {
-	    if (/Serial Number:\s+(\d+)/) {
-		$certinfo->{Serial} = $1;
-	    }
 	}
 	if ($state eq "PURPOSE")
 	{
@@ -526,16 +525,15 @@ sub getcertinfo {
     # Postprocessing, rewrite certain fields
 
     ####
-    # serial number
-    # extract hex certificate serial number (only required for -text format)
-    #$certinfo->{SerialNumber} =~ s/.*\(0x(.*)\)/$1/;
-
-
     # pad with a leading zero if length is odd
     if (length($certinfo->{SerialNumber}) % 2)
     {
 	$certinfo->{SerialNumber} = '0' . $certinfo->{SerialNumber};
     }
+    
+    my $tmp = Math::BigInt->new('0x' . $certinfo->{SerialNumber});
+    $certinfo->{Serial} = $tmp->bstr();
+
     # convert to upcase and insert colons to separate hex bytes
     $certinfo->{SerialNumber} = uc($certinfo->{SerialNumber});
     $certinfo->{SerialNumber} =~ s/(..)/$1:/g;
