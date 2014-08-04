@@ -181,6 +181,7 @@ sub get_random_bytes {
 sub cache_store {
     my $arg = shift;
     my $data = shift;
+    my $mtime = shift || time();
 
     return unless defined $data;
 
@@ -188,7 +189,7 @@ sub cache_store {
 
     # local caching first
     $cache->{$namespace}->{$arg}->{data} = $data;
-    $cache->{$namespace}->{$arg}->{mtime} = time();
+    $cache->{$namespace}->{$arg}->{mtime} = $mtime;
 
     # memcache
     if (defined $memd) {
@@ -208,11 +209,21 @@ sub cache_retrieve {
 
     # local caching first
     if (exists $cache->{$namespace}->{$arg}->{data}) {
-	return $cache->{$namespace}->{$arg}->{data};
+	my $entry_mtime = persist_exists($arg);
+
+	if (defined $entry_mtime) {
+	    log_debug("Storage/internal mtime for '$arg': $entry_mtime/$cache->{$namespace}->{$arg}->{mtime}");
+    
+	    if (defined $cache->{$namespace}->{$arg}->{mtime}
+		&& ($cache->{$namespace}->{$arg}->{mtime} >= $entry_mtime)) {
+		log_debug("Internal cache hit for $arg");
+		return $cache->{$namespace}->{$arg}->{data};
+	    }
+	}
     }
+    log_debug("Internal cache miss for $arg");
 
     # fallback to memcache
-    my $data;
     if (defined $memd) {
 	my $id = "keynanny:$namespace:$arg:";
 
@@ -220,11 +231,12 @@ sub cache_retrieve {
 
 	if (defined $tmp) {
 	    # cache hit
-	    log_debug("Cache hit for object $namespace.$arg");
+	    log_debug("memcached hit for object $namespace.$arg");
 	    my $decrypted = $instance_cipher->decrypt($tmp);
 	    # check if we can actually decrypt the data
 
 	    my $length;
+	    my $data;
 	    ($length, $data) = ($decrypted =~ m{ \A (\d+) : (.*) }xms);
 	    
 	    if (defined $length) {
@@ -232,7 +244,8 @@ sub cache_retrieve {
 		my $saved_id = substr($data, 0, $length);
 		if ($saved_id eq $id) {
 		    # authentic (stored id matches current)
-		    $data = substr($data, $length);
+		    log_debug("Integrity check successful for '$arg'");
+		    return substr($data, $length);
 		} else {
 		    # sanity check failed, stored id does not match requested id
 		    # (i. e. somebody tried to mess with the cache)
@@ -240,12 +253,13 @@ sub cache_retrieve {
 		    return;
 		}
 	    } else {
+		log_debug("memcached miss for $arg");
 		return;
 	    }
 	}
     }
 
-    return $data;
+    return;
 }
 
 
@@ -635,6 +649,7 @@ sub get_cms_recipient_info {
 }
 
 
+# returns mtime of specified key if it exists, undef otherwise
 sub persist_exists {
     my $key = shift;
 
@@ -642,7 +657,8 @@ sub persist_exists {
     my $file = File::Spec->catfile($storage_path, $key);
 
     if (-r $file) {
-	return 1;
+	my $file_mtime = (stat($file))[9];
+	return $file_mtime;
     }
     return;
 }
@@ -929,7 +945,8 @@ sub process_request {
 		    $data = persist_decrypt($arg);
 		    
 		    # cache retrieved value for later use
-		    cache_store($arg, $data);
+		    my $mtime = persist_exists($arg);
+		    cache_store($arg, $data, $mtime);
 		}
 	    }
 
@@ -999,7 +1016,8 @@ sub process_request {
 	    if (persist_encrypt($arg, $data)) {
 		
 		# and cache it
-		cache_store($arg, $data);
+		my $mtime = persist_exists($arg);
+		cache_store($arg, $data, $mtime);
 		$protocol->send_response(
 		    {
 			STATUS => 'OK',
@@ -1224,10 +1242,12 @@ if ($config{''}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xms) {
     while (my $entry  = readdir $dh) {
 	next DIR_ENTRY if (($entry eq '.') || ($entry eq '..'));
 	
-	if (persist_exists($entry)) {
+	my $entry_mtime = persist_exists($entry);
+	if (defined $entry_mtime) {
 	    my $data = persist_decrypt($entry);
 	    if (defined $data) {
 		$cache->{$namespace}->{$entry}->{data} = $data;
+		$cache->{$namespace}->{$entry}->{mtime} = $entry_mtime;
 		log_info("Key '$entry: successfully decrypted and cached");
 	    } else {
 		log_warn("Key '$entry': unable to decrypt entry (token unavailable)");
