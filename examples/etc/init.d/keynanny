@@ -10,6 +10,20 @@ DESC="keynanny credential protection daemon"
 test -x $DAEMON || exit 0
 test -d $CONFIG_DIR || exit 0
 
+# SuSE, RedHat...
+if [ -d /etc/sysconfig ] ; then
+    if [ -f /etc/sysconfig/keynanny ] ; then
+	. /etc/sysconfig/keynanny
+    fi
+fi
+
+# ... Debian, Ubuntu...
+if [ -d /etc/default ] ; then
+    if [ -f /etc/default/keynanny ] ; then
+	. /etc/default/keynanny
+    fi
+fi
+
 # Pre&Post empty function declaration, to be overriden from /lib/lsb/init-functions.d/*
 log_daemon_msg_pre () { :; }
 log_daemon_msg_post () { :; }
