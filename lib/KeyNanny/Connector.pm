@@ -12,15 +12,10 @@ use strict;
 use warnings;
 use English;
 use Moose;
-use IO::Socket::UNIX qw( SOCK_STREAM );
+
+use KeyNanny::Protocol;
 
 extends 'Connector';
-
-has 'socketfile' => (
-    is => 'ro',
-    required => 1,
-    builder => '_init_socketfile'
-);
 
 has 'trim' => (
     is => 'ro',
@@ -28,9 +23,14 @@ has 'trim' => (
     default => 1
 );
 
+has '_keynanny' => (
+    is => 'rw',
+    lazy => 1,
+    init_arg => undef, # private attribute
+    builder => '_init_keynanny',
+);
 
-sub _init_socketfile {
-
+sub _init_keynanny {
     my $self = shift;
 
     my $file = $self->LOCATION();
@@ -47,12 +47,17 @@ sub _init_socketfile {
         $self->log()->fatal( "Socketfile $file is not accessible (permission problem?). Stopped" );
         die "Socketfile $file is not accessible (permission problem?). Stopped";
     }
-    return $file;
+    
+    my $protocol = KeyNanny::Protocol->new( { SOCKETFILE => $file } );
+
+    if (! defined $protocol) {
+        die "Could not instantiate KeyNanny protocol. Stopped";
+    }
+    return $protocol;
 }
 
 
 sub get {
-
     my $self = shift;
 
     # In Config Mode, we have an empty path but use the
@@ -61,50 +66,40 @@ sub get {
     my @path = $self->_build_path_with_prefix( shift );
     my $arg = shift @path;
 
-    $self->log()->debug('Incoming keynanny request ' . $arg);
+    $self->log()->debug('Dispatching KeyNanny request for ' . $arg);
 
-    my $socketfile = $self->socketfile();
-
-    my $socket = IO::Socket::UNIX->new(
-        Type => SOCK_STREAM,
-        Peer => $socketfile
-    ) or die "Cannot connect to server: $!. Stopped";
-
-    if ( !defined $socket ) {
-        die "Could not open socket $socketfile. Stopped";
+    my $result = $self->_keynanny()->get($arg);
+    if (! defined $result) {
+	die "Could not access KeyNanny daemon. Stopped";
     }
 
-    print $socket 'get ' . $arg . "\r\n";
-
-    local $/;
-    my $result = <$socket>;
-
-    $socket->close;
+    my $data;
+    if ($result->{STATUS} eq 'OK') {
+	$data = $result->{DATA};
+    } else {
+	$self->log()->error('KeyNanny error: ' . $result->{MESSAGE} || 'n/a');
+	die "Could not get data from KeyNanny. Stopped";
+    }
 
     if ($self->trim()) {
-        $result =~ s{ \A \s* }{}xm;
-        $result =~ s{ \s* \z }{}xm;
+        $data =~ s{ \A \s* }{}xm;
+        $data =~ s{ \s* \z }{}xm;
     }
-    $self->log()->trace('keynanny result ' . $result );
-    return $result;
-
+    return $data;
 }
 
 sub exists {
-
     my $self = shift;
+
     my $val;
     eval {
         $val = $self->get( shift );
     };
     return defined $val;
-
 }
 
 sub get_meta {
-
     return { TYPE => 'scalar' };
-
 }
 
 no Moose;
