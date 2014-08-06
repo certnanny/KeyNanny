@@ -13,6 +13,7 @@ use warnings;
 
 use IO::Socket::UNIX qw( SOCK_STREAM );
 use Data::Dumper;
+use English;
 use Carp;
 
 use base qw( KeyNanny );
@@ -106,7 +107,12 @@ sub send {
 	return;
     }
 
-    print $fh $arg->{DATA};
+    eval {
+	print $fh $arg->{DATA};
+    };
+    if ($EVAL_ERROR) {
+	print STDERR "EVAL_ERROR: $EVAL_ERROR\n";
+    }
 
     if (! $arg->{BINARY}) {
 	print $fh "\r\n";

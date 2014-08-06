@@ -42,8 +42,13 @@ case "$1" in
 	    for file in $TEMPLATES ; do
 		TARGETFILE=`basename $file .keynanny-template`
 		keynanny --socketfile $SOCKETFILE template $file --outfile $CREDENTIAL_DIR/$TARGETFILE
-		chown $APPLICATION_USER_ID $CREDENTIAL_DIR/$TARGETFILE
-		chmod 600 $CREDENTIAL_DIR/$TARGETFILE
+		if [ $? = 0 ] ; then
+		    chown $APPLICATION_USER_ID $CREDENTIAL_DIR/$TARGETFILE
+		    chmod 600 $CREDENTIAL_DIR/$TARGETFILE
+		else
+		    echo "ERROR: could not process templates"
+		    exit 1
+		fi
 	    done
 	fi
 	;;

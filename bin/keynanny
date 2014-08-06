@@ -40,18 +40,29 @@ sub process_template {
 
     my $fh;
     open( $fh, '<', $infile ) or die "Error opening template file: $!\n";
-    local $/;
-    my $input = <$fh>;
+    my $input = do {
+	local $/;
+	<$fh>;
+    };
     close $fh;
 
     my $template = Template->new( {} );
 
     my $vars = {};
     foreach my $entry ( @{$variables} ) {
-        $vars->{$entry} = $kn->get($entry);
+	my $result = $kn->get($entry);
+	if ($result->{STATUS} eq 'OK') {
+	    $vars->{$entry} = $result->{DATA};
+	} else {
+	    error_msg($result, "Could not get key $entry");
+	    return;
+	}
     }
 
-    $template->process( \$input, $vars, $outfile ) || die $template->error();
+    if (! $template->process( \$input, $vars, $outfile )) {
+	print STDERR "ERROR: Could not process template $infile: " . $template->error() . "\n";
+	return;
+    }
 
     return 1;
 }
@@ -102,19 +113,15 @@ if ( !defined $cmd ) {
 
 my $rc = 0;
 if ( $cmd eq 'get' ) {
-    my $arg = shift;
-    if (defined $arg) {
+    while (my $arg = shift) {
 	my $result = $kn->get($arg);
-
+	
 	if ($result->{STATUS} eq 'OK') {
 	    print $result->{DATA};
 	} else {
 	    error_msg($result, 'Could not get key');
 	    $rc = 1;
 	}
-    } else {
-	print STDERR "Missing argument for get operation\n";
-	$rc = 1;
     }
 } elsif ( $cmd eq 'set' ) {
     my $arg = shift;
@@ -145,17 +152,20 @@ if ( $cmd eq 'get' ) {
 } elsif ( $cmd eq 'template' ) {
     my $infile = shift;
 
+    if (! defined $options{outfile}) {
+	die "Missing --outfile option. Stopped";
+    }
+
     if (scalar @variables == 0) {
 	my $result = $kn->list();
 	if ($result->{STATUS} eq 'OK') {
 	    @variables = @{$result->{KEYS}};
 	}
     }
-    
+
     if ( !process_template( $kn, $infile, $options{outfile}, \@variables ) ) {
         $rc = 1;
     }
-
 }
 else {
     die "Invalid command '$cmd'. Stopped";
