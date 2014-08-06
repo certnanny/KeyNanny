@@ -3,7 +3,7 @@
 # 
 
 Name:         keynanny
-License:      GPL 
+License:      GPL 2.0/Apache 2.0 dual license
 Group:        Productivity/Security 
 Autoreqprov:  yes 
 Summary:      KeyNanny - Client side agent that handles credential protection and access control
@@ -35,6 +35,7 @@ install -d -m 775 $RPM_BUILD_ROOT/var/lib/keynanny/examples/etc/keynanny
 install -D -m 755 examples/etc/init.d/keynanny $RPM_BUILD_ROOT/etc/init.d/keynanny
 install -D -m 644 lib/KeyNanny.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny.pm
 install -D -m 644 lib/KeyNanny/Connector.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny/Connector.pm
+install -D -m 644 lib/KeyNanny/Connector.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny/Protocol.pm
 install -D -m 644 examples/etc/keynanny/app1.conf $RPM_BUILD_ROOT/var/lib/keynanny/examples/etc/keynanny/app1.conf
 install -D -m 644 examples/etc/keynanny/app1.rc $RPM_BUILD_ROOT/var/lib/keynanny/examples/etc/keynanny/app1.rc
 
