@@ -30,14 +30,10 @@ install -d -m 775 $RPM_BUILD_ROOT/var/lib/keynanny
 install -d -m 775 $RPM_BUILD_ROOT/var/lib/keynanny/run
 install -d -m 755 $RPM_BUILD_ROOT/var/lib/keynanny/crypto
 install -d -m 775 $RPM_BUILD_ROOT/var/lib/keynanny/storage
-install -d -m 775 $RPM_BUILD_ROOT/var/lib/keynanny/examples
-install -d -m 775 $RPM_BUILD_ROOT/var/lib/keynanny/examples/etc/keynanny
 install -D -m 755 examples/etc/init.d/keynanny $RPM_BUILD_ROOT/etc/init.d/keynanny
 install -D -m 644 lib/KeyNanny.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny.pm
 install -D -m 644 lib/KeyNanny/Connector.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny/Connector.pm
 install -D -m 644 lib/KeyNanny/Connector.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny/Protocol.pm
-install -D -m 644 examples/etc/keynanny/app1.conf $RPM_BUILD_ROOT/var/lib/keynanny/examples/etc/keynanny/app1.conf
-install -D -m 644 examples/etc/keynanny/app1.rc $RPM_BUILD_ROOT/var/lib/keynanny/examples/etc/keynanny/app1.rc
 
 %pre
 # check wether the keynanny group exists and if not, create it
@@ -49,6 +45,8 @@ rm -rf $RPM_BUILD_ROOT
 %files 
 %defattr(-,root,root) 
 %doc README.md
+%doc examples/etc/keynanny/app1.conf
+%doc examples/etc/keynanny/app1.rc
 
 /usr/bin/keynanny
 /usr/bin/keynannyd
@@ -58,12 +56,9 @@ PERLLIBPATH/KeyNanny/Connector.pm
 PERLLIBPATH/KeyNanny/Protocol.pm
 
 %attr(-, root, keynanny) %dir /var/lib/keynanny
-%attr(-, root, keynanny) /var/lib/keynanny/examples/etc/keynanny/app1.conf
-%attr(-, root, keynanny) /var/lib/keynanny/examples/etc/keynanny/app1.rc
 %attr(-, root, keynanny) %dir /var/lib/keynanny/run
 %attr(-, root, keynanny) %dir /var/lib/keynanny/storage
 %attr(-, root, root) %dir /var/lib/keynanny/crypto
-%attr(-, root, root) %dir /var/lib/keynanny/examples
 /etc/init.d/keynanny
 
 
