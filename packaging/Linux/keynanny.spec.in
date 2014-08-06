@@ -25,7 +25,7 @@ echo "Build ... nothing to do here ..."
 %install 
 mkdir -p $RPM_BUILD_ROOT 
 install -D -m 755 bin/keynanny $RPM_BUILD_ROOT/usr/bin/keynanny
-install -D -m 755 bin/keynannyd $RPM_BUILD_ROOT/usr/bin/keynannyd
+install -D -m 755 bin/keynannyd $RPM_BUILD_ROOT/usr/sbin/keynannyd
 install -d -m 775 $RPM_BUILD_ROOT/var/lib/keynanny
 install -d -m 775 $RPM_BUILD_ROOT/var/lib/keynanny/run
 install -d -m 755 $RPM_BUILD_ROOT/var/lib/keynanny/crypto
@@ -36,8 +36,8 @@ install -D -m 644 lib/KeyNanny/Connector.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny
 install -D -m 644 lib/KeyNanny/Connector.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny/Protocol.pm
 
 %pre
-# check wether the keynanny group exists and if not, create it
-getent group keynanny >/dev/null || groupadd keynanny
+# check wether the keynanny group/user exists and if not, create it
+getent group keynanny >/dev/null || groupadd -r keynanny
 
 %clean 
 rm -rf $RPM_BUILD_ROOT 
@@ -49,12 +49,13 @@ rm -rf $RPM_BUILD_ROOT
 %doc examples/etc/keynanny/app1.rc
 
 /usr/bin/keynanny
-/usr/bin/keynannyd
+/usr/sbin/keynannyd
 
 PERLLIBPATH/KeyNanny.pm
 PERLLIBPATH/KeyNanny/Connector.pm
 PERLLIBPATH/KeyNanny/Protocol.pm
 
+%attr(-, root, root) %dir /etc/keynanny
 %attr(-, root, keynanny) %dir /var/lib/keynanny
 %attr(-, root, keynanny) %dir /var/lib/keynanny/run
 %attr(-, root, keynanny) %dir /var/lib/keynanny/storage

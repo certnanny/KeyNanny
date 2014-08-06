@@ -3,7 +3,7 @@
 # keynanny start script
 #
 
-DAEMON="/usr/bin/keynannyd"
+DAEMON="/usr/sbin/keynannyd"
 CONFIG_DIR=/etc/keynanny/
 DESC="keynanny credential protection daemon"
 
