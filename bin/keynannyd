@@ -22,6 +22,7 @@ use Pod::Usage;
 use File::Spec;
 use File::Path;
 use File::Temp;
+use File::Glob qw( :glob );
 use Sys::Syslog;
 use Math::BigInt;
 
@@ -264,25 +265,46 @@ sub cache_retrieve {
 }
 
 
-# get token configuration hash using the specified configuration file section
+# get list of token configuration hashes using the specified configuration file section
 sub get_token {
     my $arg = shift;
 
-    my $token = $arg;
-#    print Dumper $arg;
-    if (! -r $arg->{certificate}) {
-	log_fatal("Could not read certificate $arg->{certificate}");
-	die "Could not read certificate $arg->{certificate}. Stopped";
-    }
+    my @tokens;
 
-    my $cert = getcertinfo($arg->{certificate});
-    if (! $cert) {
-	log_fatal("Could not parse certificate $arg->{certificate}");
-	die "Could not parse certificate $arg->{certificate}. Stopped";
-    }
 
-    $token->{certinfo} = $cert;
-    return $token;
+    my $certglob_with_parens = $arg->{certificate};
+    my $certglob_without_parens = $certglob_with_parens;
+    # remove () from certificate file (to allow catching globbed substrings)
+    $certglob_without_parens =~ s{ [()] }{}xmsg;
+
+    foreach my $certfile (bsd_glob($certglob_without_parens)) {
+	my %thistoken = %{$arg};
+#	print "found certfile $certfile\n";
+	my $re = glob_to_regex($certglob_with_parens, { ignore_parens_in_glob => 1 });
+	if ($certfile =~ m{ $re }xms) {
+	    my $keyfile = $arg->{key};
+	    eval "\$keyfile=\"$keyfile\"";
+	    # print "keyfile: $keyfile\n";
+	    $thistoken{key} = $keyfile;
+	}
+	$thistoken{certificate} = $certfile;
+
+	if (! -r $certfile) {
+	    log_fatal("Could not read certificate $certfile");
+	    die "Could not read certificate $certfile. Stopped";
+	}
+
+	my $cert = getcertinfo($certfile);
+	if (! $cert) {
+	    log_fatal("Could not parse certificate $certfile");
+	    die "Could not parse certificate $certfile. Stopped";
+	}
+
+	$thistoken{certinfo} = $cert;
+
+	push @tokens, \%thistoken;
+    }
+    return @tokens;
 }
 
 sub read_tokens {
@@ -312,31 +334,39 @@ sub read_tokens {
 	    die "No key defined in token section [$id]. Stopped";
 	}
 	
-	my $token = get_token($config{$id});
+	my @tokens = get_token($config{$id});
 
-	# create lookup table
-	# certificate fingerprint is a unique handle, anything else could be ambiuous
+      TOKEN:
+	foreach my $token (@tokens) {
+	    # create lookup table
+	    # certificate fingerprint is a unique handle, anything else could be ambiuous
 
-	my $subject  = $token->{certinfo}->{SubjectName};
-	my $issuer   = $token->{certinfo}->{IssuerName};
-	my $serial   = $token->{certinfo}->{Serial};
-	my $notbefore = $token->{certinfo}->{NotBefore};
-	my $notafter = $token->{certinfo}->{NotAfter};
-	my $fingerprint = $token->{certinfo}->{CertificateFingerprint};
+	    my $subject  = $token->{certinfo}->{SubjectName};
+	    my $issuer   = $token->{certinfo}->{IssuerName};
+	    my $serial   = $token->{certinfo}->{Serial};
+	    my $notbefore = $token->{certinfo}->{NotBefore};
+	    my $notafter = $token->{certinfo}->{NotAfter};
+	    my $fingerprint = $token->{certinfo}->{CertificateFingerprint};
 
-	log_info("Token $id subject: $subject");
+	    if (defined $crypto_token->{cert}->{fingerprint}->{$fingerprint}) {
+		log_info("Ignoring duplicate token $id subject: $subject");
+		# already seen
+		next TOKEN;
+	    }
+	    $crypto_token->{cert}->{fingerprint}->{$fingerprint} = $token;
 
-	# identify latest certificate (to be used for new encryption)
-	if ($notbefore > $max_notbefore) {
-	    $max_notbefore = $notbefore;
-	    $crypto_token->{current_token} = $token;
+	    log_info("Token $id subject: $subject");
+
+	    # identify latest certificate (to be used for new encryption)
+	    if ($notbefore > $max_notbefore) {
+		$max_notbefore = $notbefore;
+		$crypto_token->{current_token} = $token;
+	    }
+
+	    # add index by issuer, serialnumber
+	    $crypto_token->{cert}->{issuer}->{$issuer}->{serial}->{$serial} = 
+		$crypto_token->{cert}->{fingerprint}->{$fingerprint};
 	}
-
-	$crypto_token->{cert}->{fingerprint}->{$fingerprint} = $token;
-	
-	# add index by issuer, serialnumber
-	$crypto_token->{cert}->{issuer}->{$issuer}->{serial}->{$serial} = 
-	    $crypto_token->{cert}->{fingerprint}->{$fingerprint};
     }
 }
 
@@ -869,6 +899,101 @@ sub persist_decrypt {
 }
 
 ###########################################################################
+# Convert shell glob to Perl regex, based on
+# Text::Glob, written by Richard Clamp
+#
+sub glob_to_regex {
+    my $glob = shift;
+    my $options = shift || {};
+
+    my $regex = glob_to_regex_string($glob, $options);
+    return qr/^$regex$/;
+}
+
+# extended function to support capturing portions caught by wildcards
+# options:
+#   strict_leading_dots    default: 1
+#   strict_wildcard_slash  default: 1
+#   ignore_parens_in_glob  do not quote () parentheses in order to allow
+#                          referencing matched portions (default: 0)
+sub glob_to_regex_string
+{
+    my $glob = shift;
+    my $options = shift || {};
+
+    my $strict_leading_dot = 1;
+    my $strict_wildcard_slash = 1;
+    my $ignore_parens_in_glob = 0;
+
+    if (exists $options->{strict_leading_dot}) {
+	$strict_leading_dot = $options->{strict_leading_dot};
+    }
+    if (exists $options->{strict_wildcard_slash}) {
+	$strict_wildcard_slash = $options->{strict_wildcard_slash};
+    }
+    if (exists $options->{ignore_parens_in_glob}) {
+	$ignore_parens_in_glob = $options->{ignore_parens_in_glob};
+    }
+
+    my ($regex, $in_curlies, $escaping);
+    local $_;
+    my $first_byte = 1;
+    for ($glob =~ m/(.)/gs) {
+        if ($first_byte) {
+            if ($strict_leading_dot) {
+                $regex .= '(?=[^\.])' unless $_ eq '.';
+            }
+            $first_byte = 0;
+        }
+        if ($_ eq '/') {
+            $first_byte = 1;
+        }
+        if ($_ eq '.' || $_ eq '|' ||
+            $_ eq '+' || $_ eq '^' || $_ eq '$' || $_ eq '@' || $_ eq '%' ) {
+            $regex .= "\\$_";
+        } 
+	elsif (! $ignore_parens_in_glob && ($_ eq '(' || $_ eq ')')) {
+            $regex .= "\\$_";
+        }
+        elsif ($_ eq '*') {
+            $regex .= $escaping ? "\\*" :
+		$strict_wildcard_slash ? "[^/]*" : ".*";
+        }
+        elsif ($_ eq '?') {
+            $regex .= $escaping ? "\\?" :
+              $strict_wildcard_slash ? "[^/]" : ".";
+        }
+        elsif ($_ eq '{') {
+            $regex .= $escaping ? "\\{" : "(";
+            ++$in_curlies unless $escaping;
+        }
+        elsif ($_ eq '}' && $in_curlies) {
+            $regex .= $escaping ? "}" : ")";
+            --$in_curlies unless $escaping;
+        }
+        elsif ($_ eq ',' && $in_curlies) {
+            $regex .= $escaping ? "," : "|";
+        }
+        elsif ($_ eq "\\") {
+            if ($escaping) {
+                $regex .= "\\\\";
+                $escaping = 0;
+            }
+            else {
+                $escaping = 1;
+            }
+            next;
+        }
+        else {
+            $regex .= $_;
+            $escaping = 0;
+        }
+        $escaping = 0;
+    }
+#    print "# $glob $regex\n" if debug;
+
+    return $regex;
+}
 
 ###########################################################################
 
