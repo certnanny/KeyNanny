@@ -279,7 +279,7 @@ sub get_token {
 
     foreach my $certfile (bsd_glob($certglob_without_parens)) {
 	my %thistoken = %{$arg};
-#	print "found certfile $certfile\n";
+
 	my $re = glob_to_regex($certglob_with_parens, { ignore_parens_in_glob => 1 });
 	if ($certfile =~ m{ $re }xms) {
 	    my $keyfile = $arg->{key};
@@ -299,6 +299,9 @@ sub get_token {
 	    log_fatal("Could not parse certificate $certfile");
 	    die "Could not parse certificate $certfile. Stopped";
 	}
+
+	log_info("Found certificate $certfile");
+	log_info("Associated key: $thistoken{key}");
 
 	$thistoken{certinfo} = $cert;
 
