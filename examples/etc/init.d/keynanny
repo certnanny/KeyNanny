@@ -2,6 +2,14 @@
 #
 # keynanny start script
 #
+### BEGIN INIT INFO
+# Provides:          keynanny
+# Required-Start:    $syslog $remote_fs
+# Required-Stop:     $syslog $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Description:       Start keynanny credential protection daemon
+### END INIT INFO
 
 DAEMON="/usr/sbin/keynannyd"
 CONFIG_DIR=/etc/keynanny/
@@ -88,7 +96,14 @@ start_keynanny() {
     DAEMONARG="--config $CONFIG_DIR/$NAME.conf"
     STATUS=0
 
-    start-stop-daemon --start --quiet --oknodo --pidfile $PID_FILE --exec $DAEMON -- $DAEMONARG || STATUS=1
+    # test if configuration can be parsed properly
+    if $DAEMON $DAEMONARG --check >/dev/null 2>&1 ; then
+	start-stop-daemon --start --quiet --oknodo --pidfile $PID_FILE --exec $DAEMON -- $DAEMONARG || STATUS=1
+    else
+	echo "ERROR: configuration problem for keynanny instance $CONFIG_DIR/$NAME.conf"
+	$DAEMON $DAEMONARG --check
+	STATUS=1
+    fi
 
     # call custom specific rc file
     if [ $STATUS == 0 ] ; then

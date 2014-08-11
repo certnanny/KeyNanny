@@ -17,7 +17,7 @@ use English;
 
 use Carp;
 use Getopt::Long;
-use Config::Std;
+use Config::IniFiles;
 use Pod::Usage;
 use File::Spec;
 use File::Path;
@@ -40,9 +40,10 @@ my %options = (
     config => '/etc/keynanny/default.conf',
     );
 
-my %config = (
+my %config;
+my %config_defaults = (
     # defaults
-    '' => {
+    keynanny => {
 	cache_strategy => 'preload',
 	log => 'syslog',
     },
@@ -78,7 +79,7 @@ sub log_message {
     my $level = shift;
     my $message = shift;
     
-    my $log_backend = $config{''}->{log};
+    my $log_backend = $config{keynanny}->{log};
 
     # this hash allows remapping of levels for specific logger types
     my %level_map_of = (
@@ -96,15 +97,15 @@ sub log_message {
 	print STDERR "$level: $message\n";
     } elsif ($log_backend eq 'syslog') {
 	# syslog should not be given FATAL priorities
-	syslog lc($level), '(' . $config{''}->{namespace} . ') ' . $message;
+	syslog lc($level), '(' . $config{keynanny}->{namespace} . ') ' . $message;
     } elsif ($log_backend eq 'log4perl') {
 	eval {
 	    my $logger;
 
-	    if (! exists $config{''}->{log4perlconfig}) {
+	    if (! exists $config{keynanny}->{log4perlconfig}) {
 		$logger = Log::Log4perl->get_logger();
 	    } else {
-		my $log_category = $config{''}->{log4perlcategory};
+		my $log_category = $config{keynanny}->{log4perlcategory};
 		$logger = Log::Log4perl->get_logger($log_category);
 	    }
 	    if (defined $logger) {
@@ -187,7 +188,7 @@ sub cache_store {
 
     return unless defined $data;
 
-    my $namespace = $config{''}->{namespace};
+    my $namespace = $config{keynanny}->{namespace};
 
     # local caching first
     $cache->{$namespace}->{$arg}->{data} = $data;
@@ -207,7 +208,7 @@ sub cache_store {
 sub cache_retrieve {
     my $arg = shift;
 
-    my $namespace = $config{''}->{namespace};
+    my $namespace = $config{keynanny}->{namespace};
 
     # local caching first
     if (exists $cache->{$namespace}->{$arg}->{data}) {
@@ -315,15 +316,11 @@ sub read_tokens {
     
     undef $crypto_token;
 
-    my @token_id;
     if (! defined $config{crypto}->{token}) {
 	die "No token configuration, cannot proceed. Stopped";
     }
-    if (ref $config{crypto}->{token} eq '') {
-	push @token_id, $config{crypto}->{token};
-    } elsif (ref $config{crypto}->{token} eq 'ARRAY') {
-	@token_id = @{$config{crypto}->{token}};
-    }
+
+    my @token_id = split('\s*,\s*', $config{crypto}->{token});
 
     my $max_notbefore = 0;
     foreach my $id (@token_id) {
@@ -1266,10 +1263,25 @@ if ($options{help}) {
 my $rc = 0;
 
 # process configuration file
-read_config($options{config}, %config);
+#read_config($options{config}, %config);
+tie %config, 'Config::IniFiles', ( -file => $options{config} );
+
+if (! scalar keys %config) {
+    print join("\n", @Config::IniFiles::errors);
+    die "Could not parse configuration file $options{config}";
+}
+
+# apply defaults
+foreach my $section (keys %config_defaults) {
+    foreach my $key (keys %{$config_defaults{$section}}) {
+	if (! exists $config{$section}->{$key}) {
+	    $config{$section}->{$key} = $config_defaults{$section}->{$key};
+	}
+    }
+}
 
 # use namespace if set in configuration...
-$namespace ||= $config{''}->{namespace};
+$namespace ||= $config{keynanny}->{namespace};
 
 # ... if not defined there, use configuration file base name
 if (! defined $namespace) {
@@ -1281,7 +1293,7 @@ if (! defined $namespace) {
 }
 
 # store namespace in config hash (if not already present)
-$config{''}->{namespace} = $namespace;
+$config{keynanny}->{namespace} = $namespace;
 
 # postprocess config (replace referenced variables)
 foreach my $section (keys %config) {
@@ -1291,7 +1303,7 @@ foreach my $section (keys %config) {
 	    my $refvar = $1;
 
 	    # check if referenced variable contains the section name
-	    my $refsec = '';
+	    my $refsec = $section; # default: this section
 	    my $refkey = $refvar;
 	    if ($refvar =~ m{ \. }xms) {
 		($refsec, $refkey) = ($refvar =~ m{ (.*?) \. (.*) \z }xms);
@@ -1321,26 +1333,26 @@ if ($options{dumpconfig}) {
 
 # if check mode is required log to console and do not cache
 if ($options{check}) {
-    $config{''}->{log} = 'console';
-    $config{''}->{cache_strategy} = 'preload';
+    $config{keynanny}->{log} = 'console';
+    $config{keynanny}->{cache_strategy} = 'preload';
 }
 
-if ($config{''}->{log} !~ m{ \A (?:console|syslog|log4perl) \z}xms) {
+if ($config{keynanny}->{log} !~ m{ \A (?:console|syslog|log4perl) \z}xms) {
     die "Invalid log configuration (expected: 'syslog', 'log4perl' or 'console'). Stopped";
 }
 
-if ($config{''}->{log} eq 'syslog') {
+if ($config{keynanny}->{log} eq 'syslog') {
     openlog 'keynannyd', 'ndelay,pid', 'local0';
 }
 
-if ($config{''}->{log} eq 'log4perl') {
+if ($config{keynanny}->{log} eq 'log4perl') {
     # simulate 'use Log::Log4perl qw(:easy)'
     require Log::Log4perl;
     Log::Log4perl->import();
-    if (! exists $config{''}->{log4perlconfig}) {
+    if (! exists $config{keynanny}->{log4perlconfig}) {
 	Log::Log4perl->easy_init();
     } else {
-	Log::Log4perl::init($config{''}->{log4perlconfig});
+	Log::Log4perl::init($config{keynanny}->{log4perlconfig});
     }
 }
 
@@ -1379,7 +1391,7 @@ if (! -d $storage_path) {
 
 ###########################################################################
 # initialize caching
-if ($config{''}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xms) {
+if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xms) {
     # read all secrets in one go
     #
     # available strategies:
@@ -1418,12 +1430,12 @@ if ($config{''}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xms) {
 
     if ($nok) {
 	log_warn("Unable to decrypt $nok entries");
-	if ($config{''}->{cache_strategy} eq 'preload') {
+	if ($config{keynanny}->{cache_strategy} eq 'preload') {
 	    log_error("Strict checking enabled, exiting due to errors");
 	    exit 1;
 	}
     }
-} elsif ($config{''}->{cache_strategy} eq 'memcache') {
+} elsif ($config{keynanny}->{cache_strategy} eq 'memcache') {
     ###########################################################################
     # prepare memcached connection
     my @memcached_servers;
