@@ -12,6 +12,7 @@ Release:      1
 Source:       %{name}-%{version}.tar.gz 
 URL:          https://github.com/certnanny/sscep
 BuildRoot:    %{_tmppath}/%{name}-build 
+requires:     perl-Config-IniFiles
 
 %description 
 KeyNanny, part of the CertNanny project, is a client side agent that handles credential protection and access control using standard operating system mechanisms and existing cryptographic standards.

@@ -2,7 +2,7 @@
 
 echo "Creating package..."
 version=$(head -n 1 VERSION)
-perllibdir=$(perl -e 'use Config; use Data::Dumper; print $Config{installvendorlib}')
+perllibdir=$(perl -e 'use Config; print $Config{installvendorlib}')
 echo "Perl libs go to $perllibdir ..."
 sed "s/VERSIONINFO/$version/" < packaging/Linux/keynanny.spec.in | sed "s'PERLLIBPATH'$perllibdir'" > packaging/Linux/keynanny.spec
 mkdir keynanny-$version
