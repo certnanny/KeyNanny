@@ -23,10 +23,7 @@ use Template;
 use Data::Dumper;
 use KeyNanny::Protocol;
 
-my %options = ();
-
 my %config;
-my $socketfile;
 
 sub usage {
     print "Usage: ...\n";
@@ -36,7 +33,7 @@ sub process_template {
     my $kn        = shift;
     my $infile    = shift;
     my $outfile   = shift;
-    my $variables = shift;
+    my $vars      = shift;
 
     my $fh;
     open( $fh, '<', $infile ) or die "Error opening template file: $!\n";
@@ -47,17 +44,6 @@ sub process_template {
     close $fh;
 
     my $template = Template->new( {} );
-
-    my $vars = {};
-    foreach my $entry ( @{$variables} ) {
-	my $result = $kn->get($entry);
-	if ($result->{STATUS} eq 'OK') {
-	    $vars->{$entry} = $result->{DATA};
-	} else {
-	    error_msg($result, "Could not get key $entry");
-	    return;
-	}
-    }
 
     if (! $template->process( \$input, $vars, $outfile )) {
 	print STDERR "ERROR: Could not process template $infile: " . $template->error() . "\n";
@@ -89,22 +75,30 @@ sub error_msg {
     return 1;
 }
 
-GetOptions( \%options, 'socketfile=s', 'variable=s@', 'outfile=s', 'help' );
+my $socketfile;
+my %defines;
+my $outfile;
+my $help;
 
-if ( $options{help} ) {
+GetOptions( 'socketfile=s' => \$socketfile,
+	    'define=s'     => \%defines,
+	    'outfile=s'    => \$outfile,
+	    'help'         => \$help );
+
+if ( $help ) {
     usage();
     exit 0;
 }
 
 ###########################################################################
 # process configuration file
-$socketfile = $options{socketfile};
+if (! defined $socketfile) {
+    die "No --socketfile specified. Stopped";
+}
 
 my $kn = KeyNanny::Protocol->new( { SOCKETFILE => $socketfile } ) or die "Error: $@";
 
 my $cmd = shift;
-
-my @variables = map { split(/,/) } @{ $options{variable} };
 
 if ( !defined $cmd ) {
     usage;
@@ -152,18 +146,35 @@ if ( $cmd eq 'get' ) {
 } elsif ( $cmd eq 'template' ) {
     my $infile = shift;
 
-    if (! defined $options{outfile}) {
+    if (! defined $outfile) {
 	die "Missing --outfile option. Stopped";
     }
 
-    if (scalar @variables == 0) {
-	my $result = $kn->list();
-	if ($result->{STATUS} eq 'OK') {
-	    @variables = @{$result->{KEYS}};
-	}
+    my @variables;
+    my $result = $kn->list();
+    if ($result->{STATUS} eq 'OK') {
+	@variables = @{$result->{KEYS}};
+    } else {
+	error_msg($result, "Could not get list of available entries from KeyNanny daemon");
+	exit 1;
     }
 
-    if ( !process_template( $kn, $infile, $options{outfile}, \@variables ) ) {
+    my %vars;
+    foreach my $entry ( @variables ) {
+	my $result = $kn->get($entry);
+	if ($result->{STATUS} eq 'OK') {
+	    $vars{$entry} = $result->{DATA};
+	} else {
+	    error_msg($result, "Could not get key $entry");
+	    exit 1;
+	}
+    }
+    # override values from keynanny by --defines on command line
+    foreach my $entry (keys %defines) {
+	$vars{$entry} = $defines{$entry};
+    }
+
+    if ( !process_template( $kn, $infile, $outfile, \%vars ) ) {
         $rc = 1;
     }
 }
