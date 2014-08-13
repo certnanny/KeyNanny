@@ -18,6 +18,7 @@ use strict;
 use warnings;
 
 use Getopt::Long;
+use Pod::Usage;
 use Template;
 
 use Data::Dumper;
@@ -79,16 +80,26 @@ my $socketfile;
 my %defines;
 my $outfile;
 my $help;
+my $man;
 
 GetOptions( 'socketfile=s' => \$socketfile,
 	    'define=s'     => \%defines,
 	    'outfile=s'    => \$outfile,
-	    'help'         => \$help );
+	    'help'         => \$help,
+	    'man'          => \$man,
+    );
 
-if ( $help ) {
-    usage();
-    exit 0;
-}
+pod2usage(
+    {
+	-exitval => 1,
+	-verbose => 0,
+    } ) if $help;
+pod2usage(
+    {
+	-exitval => 1,
+	-verbose => 2,
+    } ) if $man;
+
 
 ###########################################################################
 # process configuration file
@@ -122,9 +133,6 @@ if ( $cmd eq 'get' ) {
     my $value = shift;
 
     if (! defined $value) {
-	print STDERR "No value specified (use - for STDIN)\n";
-	$rc = 1;
-    } elsif ($value eq '-') {
 	local $/;
 	$value = <STDIN>;
     }
@@ -134,6 +142,8 @@ if ( $cmd eq 'get' ) {
 	    error_msg($result, 'Could not set key');
 	    $rc = 1;
 	}
+    } else {
+	die "No value specified. Stopped";
     }
 } elsif ( $cmd eq 'list' ) {
     my $result = $kn->list();
@@ -179,7 +189,100 @@ if ( $cmd eq 'get' ) {
     }
 }
 else {
-    die "Invalid command '$cmd'. Stopped";
+    pod2usage("$0: invalid command $cmd");
 }
 
 exit $rc;
+
+__END__
+
+=head1 NAME
+
+keynanny - Command line interface to the KeyNanny credential protection daemon
+
+=head1 SYNOPSIS
+
+keynanny [options] [command] [arguments]
+
+  Options:
+    --socketfile FILE     keynanny socket file
+    --outfile FILE        template output file name
+    --define VAR=VALUE    additional variables for template processing
+    --help                brief help message
+    --man                 full manual page
+
+  Commands:
+    get VAR               get variable VAR from keynanny
+    set VAR VALUE         set variable VAR to VALUE
+    list                  list all available variables
+    template FILE         render template FILE, replacing keynanny variables
+
+
+=head1 OPTIONS AND ARGUMENTS
+
+=over 8
+
+=item B<--socketfile FILE>
+
+Connect to a KeyNanny daemon listening on server socket FILE.
+
+=item B<--outfile FILE>
+
+Write generated output to FILE.
+
+Only applicable in template processing mode.
+
+=item B<--define VAR=VALUE>
+
+Define an additional variable VAR with value VALUE that will be available
+within the template as [% VAR %]. --define may be specified repeatedly
+to define multiple values.
+
+Please note: in order to set a VALUE containing white space the correct
+quoting syntax is --define 'VAR=foo bar' (not --define VAR='foo bar').
+
+Only applicable in template processing mode.
+
+=item B<--help>
+
+Print a brief help message and exit.
+
+=item B<--man>
+
+Prints the manual page and exits.
+
+=back
+
+The following commands may be specified:
+
+=over 8
+
+=item B<get VAR>
+
+Ask keynanny for the value of VAR and print it to STDOUT.
+
+=item B<set VAR VALUE>
+
+Set keynanny variable VAR to VALUE. STDIN is read if no VALUE is
+specified.
+
+=item B<list>
+
+List all keys that are held by the keynanny daemon (one key per line).
+
+=item B<template FILE>
+
+Read FILE and process it as a Template::Toolkit template. The rendered
+output is written to --outfile.
+The template may reference variables via [% VAR %]. All variables protected 
+by the keynanny daemon are available in the template.
+It is possible to add additional tuples via the --define VAR=VALUE
+syntax.
+Please note that any values specified via --define overwrite those
+read from keynanny if the same variable name is used.
+
+=back
+
+
+
+
