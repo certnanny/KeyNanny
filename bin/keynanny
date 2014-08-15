@@ -282,7 +282,3 @@ Please note that any values specified via --define overwrite those
 read from keynanny if the same variable name is used.
 
 =back
-
-
-
-
