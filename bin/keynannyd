@@ -71,6 +71,8 @@ my $memd;
 my $instance_cipher;
 my $crypto_token;
 my $cache;
+my $log4perl_logger;
+
 
 sub log_message {
     my $level = shift;
@@ -96,19 +98,7 @@ sub log_message {
 	# syslog should not be given FATAL priorities
 	syslog lc($level), '(' . $config{keynanny}->{namespace} . ') ' . $message;
     } elsif ($log_backend eq 'log4perl') {
-	eval {
-	    my $logger;
-
-	    if (! exists $config{keynanny}->{log4perlconfig}) {
-		$logger = Log::Log4perl->get_logger();
-	    } else {
-		my $log_category = $config{keynanny}->{log4perlcategory};
-		$logger = Log::Log4perl->get_logger($log_category);
-	    }
-	    if (defined $logger) {
-		$logger->$level($message);
-	    }
-	};
+	$log4perl_logger->$level($message);
     }
 }
 
@@ -1018,7 +1008,12 @@ sub restart_open_hook {
 sub process_request {
     my $self = shift;
 
-    my $protocol = KeyNanny::Protocol->new();
+    my $protocol_config = {};
+    if (defined $log4perl_logger) {
+	$protocol_config->{LOGGER} = $log4perl_logger;
+    }
+
+    my $protocol = KeyNanny::Protocol->new($protocol_config);
 
     eval {
 	local $SIG{'ALRM'} = sub { die "TIMEOUT\n" };
@@ -1357,6 +1352,13 @@ if ($config{keynanny}->{log} eq 'log4perl') {
 	Log::Log4perl->easy_init();
     } else {
 	Log::Log4perl::init($config{keynanny}->{log4perlconfig});
+    }
+    
+    if (! exists $config{keynanny}->{log4perlconfig}) {
+	$log4perl_logger = Log::Log4perl->get_logger();
+    } else {
+	my $log_category = $config{keynanny}->{log4perlcategory};
+	$log4perl_logger = Log::Log4perl->get_logger($log_category);
     }
 }
 

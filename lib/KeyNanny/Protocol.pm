@@ -12,6 +12,8 @@ use strict;
 use warnings;
 
 use IO::Socket::UNIX qw( SOCK_STREAM );
+use Log::Log4perl qw( :easy );
+
 use Data::Dumper;
 use English;
 use Carp;
@@ -22,7 +24,18 @@ sub new {
     my $class = shift;
     my $arg = shift;
 
-    my $self = {};
+    my $logger;
+
+    if (! defined $arg->{LOGGER}) {
+	Log::Log4perl->easy_init($ERROR);
+	$logger = get_logger();
+    } else {
+	$logger = $arg->{LOGGER};
+    }
+
+    my $self = {
+	LOG => $logger,
+    };
 
     if ($arg->{SOCKET}) {
 	$self->{SOCKET} = $arg->{SOCKET};
@@ -31,29 +44,35 @@ sub new {
     # note: SOCKET and SOCKETFILE are optional, if both are missing the class uses STDIN and STDOUT
     if ($arg->{SOCKETFILE}) {
 	if ($self->{SOCKET}) {
+	    $logger->error("KeyNanny::Protocol::new(): SOCKET and SOCKETFILE are mutually exclusive as initializing arguments to KeyNanny::Protocol");
 	    confess "SOCKET and SOCKETFILE are mutually exclusive as initializing arguments to KeyNanny::Protocol";
 	}
 
 	if (! defined $arg->{SOCKETFILE}) {
+	    $logger->error("KeyNanny::Protocol::new(): No socketfile specified");
 	    confess("No socketfile specified");
 	}
 
 	$self->{SOCKETFILE} = $arg->{SOCKETFILE};
 	
 	if (! -r $self->{SOCKETFILE} ) {
+	    $logger->error("KeyNanny::Protocol::new(): Socketfile $self->{SOCKETFILE} is not readable");
 	    confess("Socketfile $self->{SOCKETFILE} is not readable");
 	}
 	if (! -w $self->{SOCKETFILE} ) {
+	    $logger->error("KeyNanny::Protocol::new(): Socketfile $self->{SOCKETFILE} is not writable");
 	    confess("Socketfile $self->{SOCKETFILE} is not writable");
 	}
 
 	$self->{SOCKET} = IO::Socket::UNIX->new(
 	    Type => SOCK_STREAM,
 	    Peer => $self->{SOCKETFILE},
-	    ) or confess "Cannot connect to server: $!";
-
-	if ( !defined $self->{SOCKET} ) {
-	    confess "Could not open socket $self->{SOCKETFILE}";
+	    );
+	
+	if (! $self->{SOCKET}) {
+	    my $err = $!;
+	    $logger->error("KeyNanny::Protocol::new(): Cannot connect to server via $self->{SOCKETFILE}: $err");
+	    confess "Cannot connect to server via $self->{SOCKETFILE}: $err";
 	}
     }
 
@@ -76,18 +95,25 @@ sub receive {
 	$data = <$fh>;
 	if (defined $data) {
 	    $data =~ s/[\r\n]+$//;
+	} else {
+	    $self->{LOG}->error("KeyNanny::Protocol::receive(): no data line read");
 	}
     } elsif ($arg->{LENGTH} == -1) {
 	# read to EOF
 	local $/;
 	$data = <$fh>;
+	if (! defined $data) {
+	    $self->{LOG}->error("KeyNanny::Protocol::receive(): no data read");
+	}
     } elsif ($arg->{LENGTH} =~ m{ \A \d+ \z}xms) {
 	# read LENGTH bytes of data
 	my $bytes_read = read $fh, $data, $arg->{LENGTH};
 	if ($bytes_read != $arg->{LENGTH}) {
+	    $self->{LOG}->error("KeyNanny::Protocol::receive() only read $bytes_read bytes (expected: $arg->{LENGTH})");
 	    # TODO: what now?
 	}
     } else {
+	$self->{LOG}->error("KeyNanny::Protocol::receive(): invalid LENGTH specification: $arg->{LENGTH}");
 	confess "Invalid LENGTH: $arg->{LENGTH}";
     }
 
@@ -104,13 +130,15 @@ sub send {
     }
 
     if (! defined $arg->{DATA}) {
-	return;
+	$self->{LOG}->info("KeyNanny::Protocol::send(): no data to send");
+	return 1;
     }
 
     eval {
 	print $fh $arg->{DATA};
     };
     if ($EVAL_ERROR) {
+	$self->{LOG}->error("KeyNanny::Protocol::send(): EVAL_ERROR: $EVAL_ERROR");
 	print STDERR "EVAL_ERROR: $EVAL_ERROR\n";
     }
 
@@ -124,7 +152,10 @@ sub receive_command {
     my $self = shift;
     
     my $line = $self->receive();
-    return if (! defined $line);
+    if (! defined $line) {
+	$self->{LOG}->error("KeyNanny::Protocol::receive_command(): no command received");
+	return;
+    }
 
     # sanitize command: must only consist of alphanumeric characters
     my ($cmd, $args) = ($line =~ m{ \A (\w+) \s* (.*) }xms);
@@ -142,6 +173,7 @@ sub send_command {
     my $arg = shift;
     
     if (! defined $arg->{CMD}) {
+	$self->{LOG}->error("KeyNanny::Protocol::send_command(): no command specified");
 	return;
     }
     
@@ -167,6 +199,7 @@ sub send_response {
 
     my $status = $arg->{STATUS};
     if ($status !~ m{ \A (?:OK|SERVER_ERROR|CLIENT_ERROR) \z }xms) {
+	$self->{LOG}->error("KeyNanny::Protocol::send_response(): invalid status received: $status");
 	return;
     }
     my $response = $status;
@@ -175,19 +208,25 @@ sub send_response {
     if (defined $arg->{MESSAGE}) {
 	$response .= ' ' . $arg->{MESSAGE};
     }
-    
-    $self->send(
-	{
-	    DATA   => $response,
-	}) || return;
+
+    if (! $self->send(
+	      {
+		  DATA   => $response,
+	      })) {
+	$self->{LOG}->error("KeyNanny::Protocol::send_response(): could not send response");
+	return;
+    }
     
     
     if (defined $arg->{DATA}) {
-	$self->send(
-	    {
+	if (! $self->send(
+		  {
 		DATA => $arg->{DATA},
 		BINARY => 1,
-	    }) || return;
+		  })) {
+	    $self->{LOG}->error("KeyNanny::Protocol::send_response(): could not send data");
+	    return;
+	}
     }
 
     return 1;
@@ -221,6 +260,8 @@ sub receive_response {
 		{
 		    LENGTH => $message,
 		});
+	} else {
+	    $self->{LOG}->error("KeyNanny::Protocol::receive_response(): invalid message: $message");
 	}
     }
     
@@ -275,6 +316,8 @@ sub list {
     # convenience: return listed keys as arrayref
     if ($result->{STATUS} eq 'OK') {
 	$result->{KEYS} = [ split(/\s+/, $result->{DATA}) ];
+    } else {
+	$self->{LOG}->error("KeyNanny::Protocol::list(): error getting list of keys: $result->{STATUS}:$result->{MESSAGE}");
     }
     return $result;
 
