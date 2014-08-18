@@ -264,9 +264,15 @@ Within the section the following keys are used:
 
 ### **certificate** = PATH\_TO\_CERTIFICATE
 
-> Mandatory.
+> Mandatory. KeyNanny needs at least one usable token to work properly.
 >
 > Path to an encryption certificate used for decrypting the CMS encoded files in the storage directory.
+>
+> On startup KeyNanny instantiates all crypto tokens and stores an internal reference about the certificate to be able to decrypt data from the storage directory. It is perfectly valid to have a larger number of certicates configured for KeyNanny. The correct decryption certificate will be used when reading values from the storage directory.
+>
+> Storing new values will always be done using the certificate with the highest NotBefore date.
+>
+> Keynanny does not perform any certificate chain validation or revocation checks! (In fact this is not very useful for this particular purpose.)
 >
 > Please note that you may use Shell Globs to match multiple certificates at once. In order to make this useful, the globbing syntax is extended by allowing brackets () to capture the strings that are matched by the specified wildcards. The matched strings can then be used as $1, $2, ... in the **key** definition.
 >
