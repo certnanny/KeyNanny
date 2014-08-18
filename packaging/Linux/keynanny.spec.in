@@ -49,6 +49,7 @@ rm -rf $RPM_BUILD_ROOT
 %doc README.md
 %doc examples/etc/keynanny/app1.conf
 %doc examples/etc/keynanny/app1.rc
+%doc examples/etc/keynanny-log4perl.conf
 
 /usr/bin/keynanny
 /usr/sbin/keynannyd
