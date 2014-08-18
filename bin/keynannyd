@@ -1595,7 +1595,7 @@ Often such credentials will simply be literally inserted into a configuration fi
 
 =back
 
-=head2 
+=head2 Design
 
 KeyNanny cleverly combines standard features of Unix-like systems (such as file ownership and permissions, Unix interprocess communication and temp file systems) and cryptographic standards (CMS/PKCS#7) to build a credential management infrastructure that is easy to set up and understand for a Unix administrator.
 
@@ -1684,7 +1684,7 @@ The init script checks if a standard shell rc script exists for any KeyNanny ins
 With this mechanism the system administrator can adapt how KeyNanny is integrated with the system. It allows to prepare temporary file systems, render configuration files replacing KeyNanny protected variables and or kick the application itself to reload its configuration file.
 
 
-=head2 Use cases
+=head2 Integration and use cases
 
 =head3 Unmodified third party application, config files in temp file system
 
@@ -1712,7 +1712,7 @@ The integrator then creates symlinks to a (not yet existing) directory:
 
 This operation creates (dangling) symlinks in the application configuration directory.
 
-Next, the integrator creates a file called /etc/demoapp/demoapp.conf.template which contains exactly the required configuration.
+Next, the integrator creates a file called /etc/demoapp/demoapp.conf.keynanny-template which contains exactly the required configuration.
 
 In the template, appearances of the actual passwords are replaced with Template Toolkit variable references, e. g.:
 
@@ -1727,41 +1727,50 @@ In the template, appearances of the actual passwords are replaced with Template 
     webservice_clientkey = /etc/demoapp/client-key.pem
 ...
 
-Next the integrator creates the startup script for the KeyNanny instance (this is only an example to illustrate the point, actual scripts will have to use more error checking):
+Next the integrator creates the startup script for the KeyNanny instance. The keynanny distribution contains an example startscript app1.rc which provides a framework for rendering config files of an application to a tmp file system.
 
-File /etc/keynanny/demoapp.rc:
 
-    #!/bin/bash
-    case "$1" in
-        start)
-            umount /credentials/demoapp
-            mount -t tmpfs -o size=128000 /credentials/demoapp/
-            # make sure all files are created with permissions r-------- and directories r-x------
-            umask 0277
+=head3 Direct integration of KeyNanny in shell scripts
 
-            chown demoapp:root /credentials/demoapp/
-            # not necessary due to umask: chmod 500 /credentials/demoapp
-            for file in /etc/demoapp/*.template ; do
-                outfile=`basename ${file%%.template}`
-                # render config file from template to temp file system
-                keynanny --socketfile /var/lib/keynanny/demoapp.socket template $file --outfile /credentials/demoapp/$outfile
-                chown demoapp:root /credentials/demoapp/$outfile
-                # chmod 400 /credentials/demoapp/$outfile
-            done
-            # and place the key file in this directory as well
-            keynanny --socketfile /var/lib/keynanny/demoapp.socket get authkey --outfile /credentials/demoapp/client-key.pem
-            chown demoapp:root /credentials/demoapp/client-key.pem
-            # chmod 400 /credentials/demoapp/client-key.pem
-            ;;
-        stop)
-            umount /credentials/demoapp
-            ;;
-    esac
+For Unix shell scripts use the supplied keynanny binary. It can query the KeyNanny credentia lprotection daemon and outputs the returned secret to STDOUT:
 
-We are almost done. The KeyNanny rc script will create the temp file system and create the sensitive files in it. After this script terminates, the demoapp application should start without a problem.
+  FOOBAR_VALUE=`keynanny --socketfile /var/lib/keynanny/run/app1.socket get foobar`
+  if [ $? != 0 ] ; then
+      echo "An error occurred"
+      exit 1
+  fi
 
-Possible improvements: if demoapp slurps in its configuration files after successful startup, it is even possible to unmount /credentials/demoapp. The rc script could fork of a watchguard to wait for successful startup and perform the unmount operation.
+=head3 Direct integration in B<Perl> applications using the supplied KeyNanny::Protocol module
 
+  use KeyNanny::Protocol;
+
+  my $key = 'foobar';
+
+  my $kn = KeyNanny::Protocol->new( 
+    { SOCKETFILE => '/var/lib/keynanny/run/app1.socket } );
+
+  if (! defined $kn) {
+      die "Could not instantiate KeyNanny. Stopped";
+  }
+  my $result = $kn->get($key);
+  if (! defined $result) {
+      die "Error communicating with KeyNanny. Stopped";
+  }
+  if ($result->{STATUS} ne 'OK') {
+      die "KeyNanny error: " . $result->{STATUS} . ": " 
+        . $result->{MESSAGE} . "\n";
+  }
+  my $value = $result->{DATA};
+
+  print "secret stored for $key is $value\n";
+
+=head3 Direct integation in C programs
+
+TODO
+
+=head3 Direct integation in Java programs
+
+TODO
 
 =head1 CONFIGURATION FILE
 
