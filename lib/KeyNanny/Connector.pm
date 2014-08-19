@@ -48,11 +48,17 @@ sub _init_keynanny {
         die "Socketfile $file is not accessible (permission problem?). Stopped";
     }
     
-    my $protocol = KeyNanny::Protocol->new( { SOCKETFILE => $file } );
+    my $protocol = KeyNanny::Protocol->new( 
+	{
+	    SOCKETFILE => $file,
+	    # reuse Connector logger
+	    LOG4PERL_PACKAGENAME => 'connector',
+	} );
 
     if (! defined $protocol) {
         die "Could not instantiate KeyNanny protocol. Stopped";
     }
+
     return $protocol;
 }
 

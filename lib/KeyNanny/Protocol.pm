@@ -26,11 +26,15 @@ sub new {
 
     my $logger;
 
-    if (! defined $arg->{LOGGER}) {
-	Log::Log4perl->easy_init($ERROR);
-	$logger = get_logger();
-    } else {
+    if (defined $arg->{LOGGER}) {
 	$logger = $arg->{LOGGER};
+    } else {
+	if (defined $arg->{LOG4PERL_PACKAGENAME}) {
+	    $logger = Log::Log4perl->get_logger($arg->{LOG4PERL_PACKAGENAME});
+	} else {
+	    Log::Log4perl->easy_init($ERROR);
+	    $logger = get_logger();
+	}
     }
 
     my $self = {
