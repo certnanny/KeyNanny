@@ -617,7 +617,7 @@ sub get_cms_recipient_info {
 	
     
     my $cmdline = join(' ', @cmd);
-    open my $handle, "$cmdline 2>/dev/null |";
+    open my $handle, "$cmdline |";
     if (! $handle) {
 	log_error("Error running command: $cmdline");
 	return;
@@ -807,7 +807,7 @@ sub _decrypt {
     }
 
     my $cmdline = join(' ', @cmd);
-    open my $handle, $cmdline . '|';
+    open my $handle, $cmdline . ' 2>/dev/null |';
     if (! $handle) {
 	log_error("Error running command: $cmdline");
 	delete $ENV{PW};
