@@ -36,6 +36,10 @@ install -D -m 755 examples/etc/init.d/keynanny $RPM_BUILD_ROOT/etc/init.d/keynan
 install -D -m 644 lib/KeyNanny.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny.pm
 install -D -m 644 lib/KeyNanny/Connector.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny/Connector.pm
 install -D -m 644 lib/KeyNanny/Protocol.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny/Protocol.pm
+install -d -m 775 $RPM_BUILD_ROOT/usr/share/man/man1
+install -d -m 775 $RPM_BUILD_ROOT/usr/share/man/man8
+pod2man bin/keynanny | gzip -c >$RPM_BUILD_ROOT/usr/share/man/man1/keynanny.1.gz
+pod2man bin/keynannyd | gzip -c >$RPM_BUILD_ROOT/usr/share/man/man8/keynannyd.8.gz
 
 %pre
 # check wether the keynanny group/user exists and if not, create it
@@ -53,6 +57,8 @@ rm -rf $RPM_BUILD_ROOT
 
 /usr/bin/keynanny
 /usr/sbin/keynannyd
+/usr/share/man/man1/keynanny.1.gz
+/usr/share/man/man8/keynannyd.8.gz
 
 PERLLIBPATH/KeyNanny.pm
 PERLLIBPATH/KeyNanny/Connector.pm
