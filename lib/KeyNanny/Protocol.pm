@@ -41,6 +41,8 @@ sub new {
 	LOG => $logger,
     };
 
+    bless($self, $class);
+
     if ($arg->{SOCKET}) {
 	$self->{SOCKET} = $arg->{SOCKET};
     }
@@ -48,40 +50,52 @@ sub new {
     # note: SOCKET and SOCKETFILE are optional, if both are missing the class uses STDIN and STDOUT
     if ($arg->{SOCKETFILE}) {
 	if ($self->{SOCKET}) {
-	    $logger->error("KeyNanny::Protocol::new(): SOCKET and SOCKETFILE are mutually exclusive as initializing arguments to KeyNanny::Protocol");
+	    $self->{LOG}->error("KeyNanny::Protocol::new(): SOCKET and SOCKETFILE are mutually exclusive as initializing arguments to KeyNanny::Protocol");
 	    confess "SOCKET and SOCKETFILE are mutually exclusive as initializing arguments to KeyNanny::Protocol";
 	}
 
 	if (! defined $arg->{SOCKETFILE}) {
-	    $logger->error("KeyNanny::Protocol::new(): No socketfile specified");
+	    $self->{LOG}->error("KeyNanny::Protocol::new(): No socketfile specified");
 	    confess("No socketfile specified");
 	}
 
 	$self->{SOCKETFILE} = $arg->{SOCKETFILE};
-	
-	if (! -r $self->{SOCKETFILE} ) {
-	    $logger->error("KeyNanny::Protocol::new(): Socketfile $self->{SOCKETFILE} is not readable");
-	    confess("Socketfile $self->{SOCKETFILE} is not readable");
-	}
-	if (! -w $self->{SOCKETFILE} ) {
-	    $logger->error("KeyNanny::Protocol::new(): Socketfile $self->{SOCKETFILE} is not writable");
-	    confess("Socketfile $self->{SOCKETFILE} is not writable");
-	}
-
-	$self->{SOCKET} = IO::Socket::UNIX->new(
-	    Type => SOCK_STREAM,
-	    Peer => $self->{SOCKETFILE},
-	    );
-	
-	if (! $self->{SOCKET}) {
-	    my $err = $!;
-	    $logger->error("KeyNanny::Protocol::new(): Cannot connect to server via $self->{SOCKETFILE}: $err");
-	    confess "Cannot connect to server via $self->{SOCKETFILE}: $err";
-	}
+	$self->_init_socket();
     }
 
-    bless($self, $class);
     return $self;
+}
+
+sub _init_socket {
+    my $self = shift;
+
+    return unless defined $self->{SOCKETFILE};
+
+    if (! -r $self->{SOCKETFILE} ) {
+	$self->{LOG}->error("KeyNanny::Protocol::new(): Socketfile $self->{SOCKETFILE} is not readable");
+	confess("Socketfile $self->{SOCKETFILE} is not readable");
+    }
+    if (! -w $self->{SOCKETFILE} ) {
+	$self->{LOG}->error("KeyNanny::Protocol::new(): Socketfile $self->{SOCKETFILE} is not writable");
+	confess("Socketfile $self->{SOCKETFILE} is not writable");
+    }
+
+    if (defined $self->{SOCKET}) {
+	$self->{SOCKET}->close();
+	$self->{SOCKET} = undef;
+    }
+
+    $self->{SOCKET} = IO::Socket::UNIX->new(
+	Type => SOCK_STREAM,
+	Peer => $self->{SOCKETFILE},
+	);
+    
+    if (! $self->{SOCKET}) {
+	my $err = $!;
+	$self->{LOG}->error("KeyNanny::Protocol::new(): Cannot connect to server via $self->{SOCKETFILE}: $err");
+	confess "Cannot connect to server via $self->{SOCKETFILE}: $err";
+    }
+    return 1;
 }
 
 # get a single command line from socket
@@ -278,6 +292,9 @@ sub get {
     my $self       = shift;
     my $arg        = shift;
 
+    # reopen socket
+    $self->_init_socket();
+
     $self->send_command(
 	{
 	    CMD => 'get',
@@ -291,6 +308,9 @@ sub set {
     my $self       = shift;
     my $key        = shift;
     my $value      = shift;
+
+    # reopen socket
+    $self->_init_socket();
 
     $self->send_command(
 	{
@@ -309,6 +329,9 @@ sub set {
 
 sub list {
     my $self       = shift;
+
+    # reopen socket
+    $self->_init_socket();
 
     $self->send_command(
 	{
