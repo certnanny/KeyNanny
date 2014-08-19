@@ -146,6 +146,7 @@ case "$1" in
 	    # start all configured keynanny instances
 	    for CONFIG in `cd $CONFIG_DIR; ls *.conf 2> /dev/null`; do
 		NAME=${CONFIG%%.conf}
+		echo -n " $NAME"
 		start_keynanny $NAME
 	    done
 	else
@@ -153,6 +154,7 @@ case "$1" in
 	    while shift ; do
 		[ -z "$1" ] && break
 		if [ -r $CONFIG_DIR/$1.conf ] ; then
+		    echo -n " $NAME"
 		    start_keynanny $1
 		else
 		    log_failure_msg " no such keynanny: $1 "
@@ -161,6 +163,7 @@ case "$1" in
 	    done
 	fi
 	log_end_msg ${STATUS:-0}
+	rc_status -v
 	;;
     stop)
 	log_daemon_msg "Stopping $DESC"
@@ -168,6 +171,7 @@ case "$1" in
 	    # stop all configured keynanny instances
 	    for CONFIG in `cd $CONFIG_DIR; ls *.conf 2> /dev/null`; do
 		NAME=${CONFIG%%.conf}
+		echo -n " $NAME"
 		stop_keynanny $NAME
 	    done
 	else
@@ -175,6 +179,7 @@ case "$1" in
 	    while shift ; do
 		[ -z "$1" ] && break
 		if [ -r $CONFIG_DIR/$1.conf ] ; then
+		    echo -n " $NAME"
 		    stop_keynanny $1
 		else
 		    log_failure_msg " no such keynanny: $1 "
@@ -183,9 +188,11 @@ case "$1" in
 	    done
 	fi
 	log_end_msg 0
+	rc_status -v
 	;;
     *)
 	echo "Usage: $0 {start|stop|restart}"
 	exit 1
 	;;
 esac
+rc_exit
