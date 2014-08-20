@@ -60,13 +60,13 @@ sub new {
 	}
 
 	$self->{SOCKETFILE} = $arg->{SOCKETFILE};
-	$self->_init_socket();
+	$self->init_socket();
     }
 
     return $self;
 }
 
-sub _init_socket {
+sub init_socket {
     my $self = shift;
 
     return unless defined $self->{SOCKETFILE};
@@ -97,6 +97,7 @@ sub _init_socket {
     }
     return 1;
 }
+
 
 # get a single command line from socket
 sub receive {
@@ -287,67 +288,5 @@ sub receive_response {
 }
 
 ###########################################################################
-# high level methods, may be used by KeyNanny clients
-sub get {
-    my $self       = shift;
-    my $arg        = shift;
-
-    # reopen socket
-    $self->_init_socket();
-
-    $self->send_command(
-	{
-	    CMD => 'get',
-	    ARG => [ $arg ],
-	});
-
-    return $self->receive_response();
-}
-
-sub set {
-    my $self       = shift;
-    my $key        = shift;
-    my $value      = shift;
-
-    # reopen socket
-    $self->_init_socket();
-
-    $self->send_command(
-	{
-	    CMD => 'set',
-	    ARG => [ $key, length($value) ],
-	});
-
-    my $rc = $self->send(
-	{
-	    DATA   => $value,
-	    BINARY => 1,
-	});
-
-    return $self->receive_response();
-}
-
-sub list {
-    my $self       = shift;
-
-    # reopen socket
-    $self->_init_socket();
-
-    $self->send_command(
-	{
-	    CMD => 'list',
-	    ARG => [  ],
-	});
-    my $result = $self->receive_response();
-
-    # convenience: return listed keys as arrayref
-    if ($result->{STATUS} eq 'OK') {
-	$result->{KEYS} = [ split(/\s+/, $result->{DATA}) ];
-    } else {
-	$self->{LOG}->error("KeyNanny::Protocol::list(): error getting list of keys: $result->{STATUS}:$result->{MESSAGE}");
-    }
-    return $result;
-
-}
 
 1;

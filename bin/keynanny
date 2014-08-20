@@ -22,7 +22,7 @@ use Pod::Usage;
 use Template;
 
 use Data::Dumper;
-use KeyNanny::Protocol;
+use KeyNanny;
 
 my %config;
 
@@ -107,7 +107,7 @@ if (! defined $socketfile) {
     die "No --socketfile specified. Stopped";
 }
 
-my $kn = KeyNanny::Protocol->new( { SOCKETFILE => $socketfile } ) or die "Error: $@";
+my $kn = KeyNanny->new( { SOCKETFILE => $socketfile } ) or die "Error: $@";
 
 my $cmd = shift;
 

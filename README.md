@@ -151,11 +151,11 @@ For Unix shell scripts use the supplied keynanny binary. It can query the KeyNan
 
 ### Direct integration in **Perl** applications using the supplied KeyNanny::Protocol module
 
-    use KeyNanny::Protocol;
+    use KeyNanny;
 
     my $key = 'foobar';
 
-    my $kn = KeyNanny::Protocol->new( 
+    my $kn = KeyNanny->new( 
       { SOCKETFILE => '/var/lib/keynanny/run/app1.socket } );
 
     if (! defined $kn) {

@@ -1023,7 +1023,7 @@ sub process_request {
 
       COMMAND:
 	while (1) {
-	    log_debug("Server $PID idle");
+	    log_debug("Server $PID: idle");
 
 	    my $request = $protocol->receive_command();
 	    alarm($timeout);
@@ -1041,7 +1041,7 @@ sub process_request {
 		next COMMAND;
 	    }
 
-	    log_debug("Server $PID received request " . $request->{CMD} . '(' . join(', ', @{$request->{ARG}}) . ')');
+	    log_debug("Server $PID: received request " . $request->{CMD} . '(' . join(', ', @{$request->{ARG}}) . ')');
 
 	    if ($request->{CMD} eq 'get') {
 		if (! $config{access}->{read}) {
@@ -1227,10 +1227,10 @@ sub process_request {
     }; # eval
     if ($EVAL_ERROR =~ /TIMEOUT/) {
 	# TODO: do we need to handle this?
-	log_debug("Server $PID timed out");
+	log_debug("Server $PID: timed out");
 	return;
     }
-    log_debug("Server $PID exiting");
+    log_debug("Server $PID: exiting");
     return;
 }
 
@@ -1744,11 +1744,11 @@ For Unix shell scripts use the supplied keynanny binary. It can query the KeyNan
 
 =head3 Direct integration in B<Perl> applications using the supplied KeyNanny::Protocol module
 
-  use KeyNanny::Protocol;
+  use KeyNanny;
 
   my $key = 'foobar';
 
-  my $kn = KeyNanny::Protocol->new( 
+  my $kn = KeyNanny->new( 
     { SOCKETFILE => '/var/lib/keynanny/run/app1.socket } );
 
   if (! defined $kn) {
