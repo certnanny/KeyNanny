@@ -876,7 +876,7 @@ sub persist_decrypt {
     my $token;
 
     if (! defined $recipient_info) {
-	log_warn("Could not read recipient info from CMS file $file, trying all available tokens");
+	log_info("Could not read recipient info from CMS file $file, trying all available tokens");
 	# fall back to brute force (check all available certs)
 	foreach my $fingerprint (keys %{$crypto_token->{cert}->{fingerprint}}) {
 	    $token = $crypto_token->{cert}->{fingerprint}->{$fingerprint};
