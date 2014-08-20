@@ -1274,6 +1274,7 @@ GetOptions(\%options,
 	   'config=s',
 	   'dumpconfig',
 	   'check',
+	   'rekey',
 	   'help',
 	   'man');
 
@@ -1362,6 +1363,11 @@ foreach my $section (keys %config) {
 if ($options{dumpconfig}) {
     print Dumper \%config; 
     exit 0;
+}
+
+# if rekey is specified, also enable check option
+if ($options{rekey}) {
+    $options{check} = 1;
 }
 
 # if check mode is required log to console and do not cache
@@ -1517,6 +1523,39 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
     die "Invalid cache strategy (expected: 'memcache', 'preload' or 'preload-relaxed'). Stopped";
 }
 
+if ($options{rekey}) {
+    log_info("Rekeying stored entries");
+
+    opendir(my $dh, $storage_path);
+    if (! defined $dh) {
+	die "Could not scan storage directory $storage_path. Stopped";
+    }
+
+    log_debug("Scanning $storage_path for encrypted data objects");
+    my $nok = 0;
+  DIR_ENTRY:
+    while (my $entry  = readdir $dh) {
+	next DIR_ENTRY if (($entry eq '.') || ($entry eq '..'));
+
+	log_info("Rekeying $entry");
+	my $entry_mtime = persist_exists($entry);
+	if (defined $entry_mtime) {
+	    my $data = persist_decrypt($entry);
+	    if (defined $data) {
+		log_info("Key '$entry': successfully rekeyed");
+		persist_encrypt($entry, $data);
+	    } else {
+		log_error("Key '$entry': could not rekey entry (token unavailable?)");
+		$nok++;
+	    }
+	}
+    }
+    closedir $dh;
+    log_info("Rekeying finished with $nok errors");
+    exit ($nok == 0);
+}
+
+
 if ($options{check}) {
     log_info("Total number of configured tokens: " . scalar keys(%{$crypto_token->{index}}));
     foreach my $index (sort keys %{$crypto_token->{index}}) {
@@ -1586,7 +1625,10 @@ keynannyd [options]
 
   Options:
     --config FILE   keynannyd configuration file
-    --check         perform tests on configuration and storage
+    --check         perform tests on configuration and storage and print
+                    summary
+    --rekey         re-encrypt all encrypted data with the latest encryption
+                    certificate
     --dumpconfig    print configuration summary (as Perl data structure)
     --help          brief help message
     --man           full manual page
@@ -1604,6 +1646,24 @@ Read configuration from FILE. Default: /etc/keynanny/default.conf
 Perform a complete initialization using the specified configuration,
 including decryption of any values present in the configured storage
 directory.
+
+The --check command prints an overview on the configured tokens and
+indicates the number of encrypted items which use the token.
+
+Certificates which are reported to be UNUSED are not required by this
+particular KeyNanny instance for decryption (but note that there may
+be other instances sharing the same crypto tokens which possibly still
+require the UNUSED tokens).
+
+Exit with a non-zero return code if any errors are encountered (e. g.
+not all values could be decrypted).
+
+=item B<--rekey>
+
+Iterate through all encrypted items and re-encrypt values with the latest
+certificate. This operation is useful in order to retire older certificates
+(which would otherwise have to be retained in order to decrypt older 
+KeyNanny entries).
 
 Exit with a non-zero return code if any errors are encountered (e. g.
 not all values could be decrypted).
