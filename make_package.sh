@@ -22,6 +22,11 @@ linux () {
 
 ##### MAIN #####
 
+if [ ! -r VERSION ] ; then
+    echo "ERROR: VERSION file does not exist. Hint: run 'make package'"
+    exit 1
+fi
+
 OS=`uname -s`
 
 if [ x"$OS" = "xSunOS" ]
