@@ -202,7 +202,7 @@ sub cache_retrieve {
 	my $entry_mtime = persist_exists($arg);
 
 	if (defined $entry_mtime) {
-	    log_debug("Storage/internal mtime for '$arg': $entry_mtime/$cache->{$namespace}->{$arg}->{mtime}");
+	    # log_debug("Storage/internal mtime for '$arg': $entry_mtime/$cache->{$namespace}->{$arg}->{mtime}");
     
 	    if (defined $cache->{$namespace}->{$arg}->{mtime}
 		&& ($cache->{$namespace}->{$arg}->{mtime} >= $entry_mtime)) {
@@ -308,7 +308,12 @@ sub read_tokens {
     my @token_id = split('\s*,\s*', $config{crypto}->{token});
 
     my $max_notbefore = 0;
+
+    # absolut token count
+    my $token_index = 0;
+    
     foreach my $id (@token_id) {
+	# $id is the section name in the configuration file
 	my $cert = $config{$id}->{certificate};
 	my $key  = $config{$id}->{key};
 	
@@ -318,9 +323,12 @@ sub read_tokens {
 	if (! defined $key) {
 	    die "No key defined in token section [$id]. Stopped";
 	}
-	
+
+	# match all certificates referenced in this token section. 
+	# this may be zero (not found), one (no wildcards) or many (certificate uses wildcards)
 	my @tokens = get_token($config{$id});
 
+	my $implicit_token_index = 0;
       TOKEN:
 	foreach my $token (@tokens) {
 	    # create lookup table
@@ -338,9 +346,25 @@ sub read_tokens {
 		# already seen
 		next TOKEN;
 	    }
+
+	    # record a field for token use, this is incremented on every token use (to catch unused tokens)
+	    $token->{refcount} = 0;
+
+	    # absolute token count
+	    $token_index++;
+	    
+	    # implicit token count (one token section may reference many certificates)
+	    $implicit_token_index++;
+
 	    $crypto_token->{cert}->{fingerprint}->{$fingerprint} = $token;
 
-	    log_info("Token $id subject: $subject");
+	    # auxiliar data for statistics and cross referencing
+	    # sequential token count
+	    $crypto_token->{index}->{$token_index} = $crypto_token->{cert}->{fingerprint}->{$fingerprint};
+	    # tokens ordered by section
+	    push @{$crypto_token->{id}->{$id}},      $crypto_token->{cert}->{fingerprint}->{$fingerprint};
+
+	    log_info("Token #$token_index: $id ($implicit_token_index) subject: $subject");
 
 	    # identify latest certificate (to be used for new encryption)
 	    if ($notbefore > $max_notbefore) {
@@ -353,6 +377,9 @@ sub read_tokens {
 		$crypto_token->{cert}->{fingerprint}->{$fingerprint};
 	}
     }
+
+    # debug: print all tokens
+    #print Dumper $crypto_token; die;
 }
 
 # parse PEM encoded X.509v3 certificate and return certificate information 
@@ -856,6 +883,10 @@ sub persist_decrypt {
 	    my $result = _decrypt($token, $file);
 	    if (defined $result) {
 		log_info("Key '$key': found suitable decryption token");
+
+		# record token use for statistics
+		$token->{refcount}++;
+
 		return $result;
 	    }
 	}
@@ -878,6 +909,9 @@ sub persist_decrypt {
 	    log_error("Key '$key': cannot decrypt entry, none of the recipient certificates are available to keynanny: $printable_recipients");
 	    return;
 	}
+
+	# record token use for statistics
+	$token->{refcount}++;
     }
 
     return _decrypt($token, $file);
@@ -1484,7 +1518,28 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
 }
 
 if ($options{check}) {
+    log_info("Total number of configured tokens: " . scalar keys(%{$crypto_token->{index}}));
+    foreach my $index (sort keys %{$crypto_token->{index}}) {
+	my $certificate = $crypto_token->{index}->{$index}->{certificate};
+	my $refcount    = $crypto_token->{index}->{$index}->{refcount};
+
+	my $usage;
+	my $is_current = 'RETIRED';
+	if ($crypto_token->{current_token} == $crypto_token->{index}->{$index}) {
+	    # this token is the one with the highes NotBefore, i. e. the one which will be used
+	    # for storing new entries
+	    $is_current = 'CURRENT';
+	}
+
+	if ($refcount) {
+	    $usage = "IN USE, REFCOUNT: $refcount";
+	} else {
+	    $usage = "UNUSED";
+	}
+	log_info("Certificate $certificate: $is_current, $usage");
+    }
     log_info("Check finished. Exiting.");
+#    print Dumper $crypto_token;
     exit $rc;
 }
 
