@@ -16,9 +16,10 @@ doc:
 	pod2markdown bin/keynannyd | grep -A9999 DESCRIPTION >> README.md
 
 version:
-	@VERSION_FROM_TAG=`git describe --tags | cut -d- -f1 | perl -p -e 's/.*(\\d+\\.\\d+).*/\\1/g'` ;\
-	MINOR_FROM_GIT=`git describe --tags | cut -d- -f2` ;\
-	echo "$${VERSION_FROM_TAG}.$${MINOR_FROM_GIT:-0}" >VERSION
+	@GIT_DESCRIPTION=`git describe --tags | perl -p -e 's/.*(\\d+\\.\\d+)-?(\\d*).*/\\1 \\2/'` ;\
+	VERSION="$${GIT_DESCRIPTION%% *}" ;\
+	TAG_DISTANCE="$${GIT_DESCRIPTION##* }" ;\
+	echo "$$VERSION.$${TAG_DISTANCE:-0}" >VERSION
 
 package: version
 	./make_package.sh
