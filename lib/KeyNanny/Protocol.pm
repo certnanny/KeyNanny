@@ -18,8 +18,6 @@ use Data::Dumper;
 use English;
 use Carp;
 
-use base qw( KeyNanny );
-
 sub new {
     my $class = shift;
     my $arg = shift;
