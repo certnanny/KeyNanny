@@ -10,7 +10,7 @@ Summary:      KeyNanny - Client side agent that handles credential protection an
 Version:      VERSIONINFO
 Release:      1 
 Source:       %{name}-%{version}.tar.gz 
-URL:          https://github.com/certnanny/sscep
+URL:          https://github.com/certnanny/KeyNanny
 BuildRoot:    %{_tmppath}/%{name}-build 
 requires:     perl-Config-IniFiles
 
