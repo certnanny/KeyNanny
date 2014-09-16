@@ -1464,32 +1464,41 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
 
     log_debug("Scanning $storage_path for encrypted data objects");
     my $nok = 0;
+    my $ok = 0;
+    my $total = 0;
   DIR_ENTRY:
     while (my $entry  = readdir $dh) {
 	next DIR_ENTRY if (($entry eq '.') || ($entry eq '..'));
 	
 	my $entry_mtime = persist_exists($entry);
+	$total++;
 	if (defined $entry_mtime) {
 	    my $data = persist_decrypt($entry);
 	    if (defined $data) {
 		$cache->{$namespace}->{$entry}->{data} = $data;
 		$cache->{$namespace}->{$entry}->{mtime} = $entry_mtime;
-		log_info("Key '$entry': successfully decrypted and cached");
+		log_info("Entry '$entry': successfully decrypted and cached");
+		$ok++;
 	    } else {
-		log_warn("Key '$entry': unable to decrypt entry (token unavailable)");
+		log_warn("Entry '$entry': unable to decrypt entry (token unavailable)");
 		$nok++;
 	    }
 	}
     }
     closedir $dh;
 
+    log_info("Number of KeyNanny entries (total): $total");
+    log_info("Number of KeyNanny entries (accessible): $ok");
+    log_info("Number of KeyNanny entries (inaccessible): $nok");
+
     if ($nok) {
-	log_warn("Unable to decrypt $nok entries");
+	log_warn("Unable to decrypt $nok KeyNanny entries");
 	if ($config{keynanny}->{cache_strategy} eq 'preload') {
 	    log_error("Strict checking enabled, exiting due to errors");
 	    exit 1;
 	}
     }
+
 } elsif ($config{keynanny}->{cache_strategy} eq 'memcache') {
     ###########################################################################
     # prepare memcached connection
@@ -1566,13 +1575,18 @@ if ($options{rekey}) {
 
 
 if ($options{check}) {
-    log_info("Total number of configured tokens: " . scalar keys(%{$crypto_token->{index}}));
+    my $total = 0;
+    my $inuse = 0;
+    my $unused = 0;
+
     foreach my $index (sort keys %{$crypto_token->{index}}) {
 	my $certificate = $crypto_token->{index}->{$index}->{certificate};
 	my $refcount    = $crypto_token->{index}->{$index}->{refcount};
 
 	my $usage;
 	my $is_current = 'RETIRED';
+	$total++;
+
 	if ($crypto_token->{current_token} == $crypto_token->{index}->{$index}) {
 	    # this token is the one with the highes NotBefore, i. e. the one which will be used
 	    # for storing new entries
@@ -1581,11 +1595,17 @@ if ($options{check}) {
 
 	if ($refcount) {
 	    $usage = "IN USE, REFCOUNT: $refcount";
+	    $inuse++;
 	} else {
 	    $usage = "UNUSED";
+	    $unused++;
 	}
 	log_info("Certificate $certificate: $is_current, $usage");
     }
+    log_info("Number of configured tokens (total): " . $total);
+    log_info("Number of configured tokens (in use): " . $inuse);
+    log_info("Number of configured tokens (unused): " . $unused);
+
     log_info("Check finished. Exiting.");
 #    print Dumper $crypto_token;
     exit $rc;
