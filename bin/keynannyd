@@ -1033,7 +1033,7 @@ sub post_bind_hook {
 sub child_init_hook {
     my $self = shift;
 
-    $0 = "keynannyd worker ($namespace)";
+    $0 = "keynannyd ($namespace) worker";
 }
 
 # reread tokens on server restart request
