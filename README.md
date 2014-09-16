@@ -220,6 +220,16 @@ The following configuration directives may be used:
 >
 > **log4perl**: Log using Log::Log4Perl
 
+### **debug** = 0|1
+
+> Optional. Defaults to 0.
+>
+> Log debugging information (default: only level 'info' and higher).
+>
+> Can be overridden by the --debug option.
+
+**syslog**: Log to syslog (facility local0). This is the default.
+
 ### **log4perlconfig** = FILE
 
 > Optional. Only used when using Log::Log4Perl.
@@ -437,3 +447,15 @@ Access controls for clients connecting via the Unix Domain Socket.
     [access]
     read = 1
     write = 0
+
+# POD ERRORS
+
+Hey! **The above document had some coding errors, which are explained below:**
+
+- Around line 1952:
+
+    You forgot a '=back' before '=head3'
+
+- Around line 1966:
+
+    &#x3d;back without =over

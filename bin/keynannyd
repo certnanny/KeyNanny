@@ -46,6 +46,7 @@ my %config_defaults = (
     keynanny => {
 	cache_strategy => 'preload',
 	log => 'syslog',
+	debug => 0,
     },
     crypto => {
 	openssl => '/usr/bin/openssl',
@@ -104,6 +105,7 @@ sub log_message {
 
 sub log_debug {
     my $arg = shift;
+    return unless $config{keynanny}->{debug};
     log_message('debug', $arg);
 }
 sub log_info {
@@ -1275,6 +1277,7 @@ GetOptions(\%options,
 	   'dumpconfig',
 	   'check',
 	   'rekey',
+	   'debug',
 	   'help',
 	   'man');
 
@@ -1369,6 +1372,12 @@ if ($options{dumpconfig}) {
 if ($options{rekey}) {
     $options{check} = 1;
 }
+
+# if debug is specified override setting in config
+if ($options{debug}) {
+    $config{keynanny}->{debug} = 1;
+}
+
 
 # if check mode is required log to console and do not cache
 if ($options{check}) {
@@ -1630,6 +1639,7 @@ keynannyd [options]
     --rekey         re-encrypt all encrypted data with the latest encryption
                     certificate
     --dumpconfig    print configuration summary (as Perl data structure)
+    --debug         Enable debugging
     --help          brief help message
     --man           full manual page
 
@@ -1938,6 +1948,20 @@ B<syslog>: Log to syslog (facility local0). This is the default.
 B<console>: Log to STDOUT (not useful when running as a daemon)
 
 B<log4perl>: Log using Log::Log4Perl
+
+=head3 B<debug> = 0|1
+
+=over 4
+
+Optional. Defaults to 0.
+
+Log debugging information (default: only level 'info' and higher).
+
+Can be overridden by the --debug option.
+
+=back
+
+B<syslog>: Log to syslog (facility local0). This is the default.
 
 =back
 
