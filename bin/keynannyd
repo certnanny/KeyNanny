@@ -1969,6 +1969,10 @@ B<console>: Log to STDOUT (not useful when running as a daemon)
 
 B<log4perl>: Log using Log::Log4Perl
 
+B<syslog>: Log to syslog (facility local0). This is the default.
+
+=back
+
 =head3 B<debug> = 0|1
 
 =over 4
@@ -1978,10 +1982,6 @@ Optional. Defaults to 0.
 Log debugging information (default: only level 'info' and higher).
 
 Can be overridden by the --debug option.
-
-=back
-
-B<syslog>: Log to syslog (facility local0). This is the default.
 
 =back
 
