@@ -1,0 +1,6 @@
+{
+    "certfile": "keynanny-cert.pem",
+    "keyfile": "keynanny-key.pem",
+    "spooldir": "spool"
+}
+
