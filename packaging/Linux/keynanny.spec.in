@@ -38,6 +38,8 @@ install -D -m 644 lib/KeyNanny/Connector.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny
 install -D -m 644 lib/KeyNanny/Protocol.pm $RPM_BUILD_ROOT/PERLLIBPATH/KeyNanny/Protocol.pm
 install -d -m 775 $RPM_BUILD_ROOT/usr/share/man/man1
 install -d -m 775 $RPM_BUILD_ROOT/usr/share/man/man8
+install -d -m 775 $RPM_BUILD_ROOT/usr/lib/cgi-bin
+install -D -m 755 bin/keynanny.cgi $RPM_BUILD_ROOT/usr/lib/cgi-bin/keynanny.cgi
 pod2man bin/keynanny | gzip -c >$RPM_BUILD_ROOT/usr/share/man/man1/keynanny.1.gz
 pod2man bin/keynannyd | gzip -c >$RPM_BUILD_ROOT/usr/share/man/man8/keynannyd.8.gz
 
@@ -57,6 +59,7 @@ rm -rf $RPM_BUILD_ROOT
 
 /usr/bin/keynanny
 /usr/sbin/keynannyd
+/usr/lib/cgi-bin/keynanny.cgi
 /usr/share/man/man1/keynanny.1.gz
 /usr/share/man/man8/keynannyd.8.gz
 
@@ -70,5 +73,3 @@ PERLLIBPATH/KeyNanny/Protocol.pm
 %attr(-, root, keynanny) %dir /var/lib/keynanny/storage
 %attr(-, root, root) %dir /var/lib/keynanny/crypto
 /etc/init.d/keynanny
-
-
