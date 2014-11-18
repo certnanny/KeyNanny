@@ -1,0 +1,280 @@
+# # logged in as root
+# cd /var/lib/keynanny/crypto/
+# openssl genrsa -out kn01-key.pem 2048
+Generating RSA private key, 2048 bit long modulus
+..................................................................................................................+++
+....................................................................+++
+e is 65537 (0x10001)
+# openssl genrsa -out kn02-key.pem 2048
+Generating RSA private key, 2048 bit long modulus
+.........................................................................................+++
+..........................................................+++
+e is 65537 (0x10001)
+# cat selfsign.cfg
+[ req ]
+distinguished_name     = req_distinguished_name
+prompt                 = no
+
+[ req_distinguished_name ]
+C                      = SE
+ST                     = Taka Tuka
+L                      = KeyNanny Test Centre
+O                      = KeyNanny
+OU                     = KeyNanny QA
+CN                     = KeyNanny Test Hero
+emailAddress           = keynanny@example.com
+
+# openssl req -new -x509 -config selfsign.cfg -key kn01-key.pem -out kn01-cert.pem -days 3653
+# openssl req -new -x509 -config selfsign.cfg -key kn02-key.pem -out kn02-cert.pem -days 3653
+# openssl x509 -in kn01-cert.pem -text
+Certificate:
+    Data:
+        Version: 1 (0x0)
+        Serial Number: 15164222508995161750 (0xd272240747a3ae96)
+    Signature Algorithm: sha1WithRSAEncryption
+        Issuer: C=SE, ST=Taka Tuka, L=KeyNanny Test Centre, O=KeyNanny, OU=KeyNanny QA, CN=KeyNanny Test Hero/emailAddress=keynanny@example.com
+        Validity
+            Not Before: Nov 18 19:34:12 2014 GMT
+            Not After : Nov 18 19:34:12 2024 GMT
+        Subject: C=SE, ST=Taka Tuka, L=KeyNanny Test Centre, O=KeyNanny, OU=KeyNanny QA, CN=KeyNanny Test Hero/emailAddress=keynanny@example.com
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:d2:a1:e6:8e:7e:cc:58:4a:7b:d4:5b:a3:31:0b:
+                    54:62:6c:c7:90:fe:b0:61:9b:d6:32:87:81:c1:87:
+                    3f:d1:5d:51:dd:78:45:99:8f:36:cc:03:92:aa:65:
+                    6f:da:ce:ac:76:82:fc:b6:36:83:4c:d8:35:b9:2d:
+                    2f:fd:99:40:9c:54:5e:22:e9:76:93:b1:7f:83:f4:
+                    d8:ef:26:ad:52:b5:16:e4:c8:45:68:aa:18:0f:7e:
+                    18:97:0b:34:55:da:70:59:a7:75:d4:f5:cc:52:93:
+                    22:30:ff:0f:a4:7e:a4:d5:be:5c:08:b0:65:c6:99:
+                    a3:1d:2f:ba:bc:e7:cc:ea:68:5e:ff:9d:f7:32:f1:
+                    59:a0:b0:01:eb:1e:4a:18:ce:59:31:c2:f3:9e:17:
+                    bc:ef:26:5c:b0:75:48:d7:23:66:8f:af:b4:80:7e:
+                    56:79:7b:95:78:24:11:2b:3e:71:13:1f:f1:3b:eb:
+                    1d:f6:12:6b:3e:10:b2:26:a6:52:fc:04:6e:ad:c0:
+                    c4:e6:c2:fa:89:0f:c4:03:95:09:1c:a9:53:8f:ab:
+                    88:94:27:23:14:9c:ef:ed:20:41:59:c9:17:13:ca:
+                    d1:c8:22:4f:b7:4b:6c:35:42:fa:42:ff:ef:ca:fa:
+                    9a:35:02:59:f2:39:95:97:1b:8c:9d:46:78:52:82:
+                    a0:3b
+                Exponent: 65537 (0x10001)
+    Signature Algorithm: sha1WithRSAEncryption
+         54:5e:75:55:3c:15:5a:f7:f5:34:bc:6b:e3:95:8d:55:1a:84:
+         42:34:70:04:60:a3:eb:40:e0:55:6a:ce:63:68:a1:68:f9:86:
+         0e:93:40:b4:6b:d9:70:4a:36:ce:05:8b:eb:6c:19:88:e6:ec:
+         37:1c:d9:5f:65:69:58:4f:03:8d:07:3d:7d:16:7f:80:cf:0d:
+         22:87:73:43:75:2e:85:b9:29:c1:2c:e7:34:b5:da:fd:af:9f:
+         33:7b:b9:34:f1:3c:d8:07:b7:44:56:4e:a7:96:8f:2c:0e:71:
+         31:03:6c:7a:38:cc:c3:28:8b:46:62:1f:ce:ec:1b:72:fc:5f:
+         41:22:c6:c9:f8:ae:9d:3e:bb:96:bf:4f:40:32:2a:64:f7:f9:
+         82:99:9c:62:b1:ea:a3:65:f9:04:86:06:3b:05:c5:fe:9b:10:
+         19:0b:5d:bf:6b:7b:cd:53:30:72:18:c7:c7:b3:30:f6:72:75:
+         03:75:e8:0d:77:4a:79:01:2d:fa:7c:c1:81:25:0f:b7:25:42:
+         5c:6b:b2:7b:dd:21:59:9b:70:03:d3:50:76:eb:11:5a:bb:70:
+         b7:48:1c:ba:20:8c:bb:2e:50:f1:d0:c6:ef:62:5b:46:fd:0f:
+         82:3c:dc:db:1b:2e:42:00:8a:28:fe:97:e7:c9:a0:f1:53:c1:
+         59:2e:c9:b8
+-----BEGIN CERTIFICATE-----
+MIID1DCCArwCCQDSciQHR6OuljANBgkqhkiG9w0BAQUFADCBqzELMAkGA1UEBhMC
+U0UxEjAQBgNVBAgMCVRha2EgVHVrYTEdMBsGA1UEBwwUS2V5TmFubnkgVGVzdCBD
+ZW50cmUxETAPBgNVBAoMCEtleU5hbm55MRQwEgYDVQQLDAtLZXlOYW5ueSBRQTEb
+MBkGA1UEAwwSS2V5TmFubnkgVGVzdCBIZXJvMSMwIQYJKoZIhvcNAQkBFhRrZXlu
+YW5ueUBleGFtcGxlLmNvbTAeFw0xNDExMTgxOTM0MTJaFw0yNDExMTgxOTM0MTJa
+MIGrMQswCQYDVQQGEwJTRTESMBAGA1UECAwJVGFrYSBUdWthMR0wGwYDVQQHDBRL
+ZXlOYW5ueSBUZXN0IENlbnRyZTERMA8GA1UECgwIS2V5TmFubnkxFDASBgNVBAsM
+C0tleU5hbm55IFFBMRswGQYDVQQDDBJLZXlOYW5ueSBUZXN0IEhlcm8xIzAhBgkq
+hkiG9w0BCQEWFGtleW5hbm55QGV4YW1wbGUuY29tMIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEA0qHmjn7MWEp71FujMQtUYmzHkP6wYZvWMoeBwYc/0V1R
+3XhFmY82zAOSqmVv2s6sdoL8tjaDTNg1uS0v/ZlAnFReIul2k7F/g/TY7yatUrUW
+5MhFaKoYD34Ylws0VdpwWad11PXMUpMiMP8PpH6k1b5cCLBlxpmjHS+6vOfM6mhe
+/533MvFZoLAB6x5KGM5ZMcLznhe87yZcsHVI1yNmj6+0gH5WeXuVeCQRKz5xEx/x
+O+sd9hJrPhCyJqZS/ARurcDE5sL6iQ/EA5UJHKlTj6uIlCcjFJzv7SBBWckXE8rR
+yCJPt0tsNUL6Qv/vyvqaNQJZ8jmVlxuMnUZ4UoKgOwIDAQABMA0GCSqGSIb3DQEB
+BQUAA4IBAQBUXnVVPBVa9/U0vGvjlY1VGoRCNHAEYKPrQOBVas5jaKFo+YYOk0C0
+a9lwSjbOBYvrbBmI5uw3HNlfZWlYTwONBz19Fn+Azw0ih3NDdS6FuSnBLOc0tdr9
+r58ze7k08TzYB7dEVk6nlo8sDnExA2x6OMzDKItGYh/O7Bty/F9BIsbJ+K6dPruW
+v09AMipk9/mCmZxiseqjZfkEhgY7BcX+mxAZC12/a3vNUzByGMfHszD2cnUDdegN
+d0p5AS36fMGBJQ+3JUJca7J73SFZm3AD01B26xFau3C3SBy6IIy7LlDx0MbvYltG
+/Q+CPNzbGy5CAIoo/pfnyaDxU8FZLsm4
+-----END CERTIFICATE-----
+# openssl x509 -in kn02-cert.pem -text
+Certificate:
+    Data:
+        Version: 1 (0x0)
+        Serial Number: 13448744038426472660 (0xbaa38972cd8ff0d4)
+    Signature Algorithm: sha1WithRSAEncryption
+        Issuer: C=SE, ST=Taka Tuka, L=KeyNanny Test Centre, O=KeyNanny, OU=KeyNanny QA, CN=KeyNanny Test Hero/emailAddress=keynanny@example.com
+        Validity
+            Not Before: Nov 18 19:34:20 2014 GMT
+            Not After : Nov 18 19:34:20 2024 GMT
+        Subject: C=SE, ST=Taka Tuka, L=KeyNanny Test Centre, O=KeyNanny, OU=KeyNanny QA, CN=KeyNanny Test Hero/emailAddress=keynanny@example.com
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:b3:0f:19:13:76:b9:81:f2:bb:33:a8:41:2e:36:
+                    64:50:9f:11:e7:d1:14:15:14:34:d8:7c:6a:a7:1c:
+                    39:90:ec:48:c4:ac:b8:d4:0a:2f:25:d8:ff:9b:5f:
+                    3a:2c:7c:b6:24:ce:50:f8:eb:35:01:97:5a:3e:ff:
+                    95:03:cc:de:3d:7a:c7:02:ed:c4:1c:2c:43:f7:2e:
+                    eb:d7:38:8d:6f:b2:f9:b2:b5:7c:5c:06:c2:27:fc:
+                    35:fb:b2:d0:c3:e6:e7:0e:be:5d:2d:fb:2f:00:2f:
+                    f6:30:e2:d4:8c:b3:e2:1c:d3:b8:11:c6:74:73:4b:
+                    1c:b7:5f:12:21:38:8f:ce:19:3f:65:95:57:87:38:
+                    dc:fd:77:12:32:f9:1e:50:5f:2c:56:b5:05:ad:11:
+                    22:4f:af:00:9a:55:4d:fc:53:36:54:03:a5:d3:d2:
+                    8c:c2:db:55:b3:9b:78:3d:29:ed:29:09:81:02:ce:
+                    5b:16:80:13:d3:e7:0e:72:fa:2d:e4:f7:72:f0:1c:
+                    ad:07:eb:69:72:06:bc:3f:a6:f0:5b:52:dc:29:55:
+                    20:42:3b:77:d9:58:c9:2a:63:3e:c5:9a:b5:0c:ef:
+                    4c:80:39:e1:5d:66:94:c4:c2:04:e3:c3:27:83:ef:
+                    36:19:93:a8:35:29:02:85:5f:3c:97:71:55:68:2f:
+                    88:8f
+                Exponent: 65537 (0x10001)
+    Signature Algorithm: sha1WithRSAEncryption
+         01:ba:c6:69:2f:c0:ae:ca:63:56:e0:c4:f1:89:85:e1:66:33:
+         85:01:30:cf:6c:1f:e0:9c:81:cc:98:31:7b:d3:6a:b4:11:98:
+         9f:11:70:d4:b4:73:e9:d2:77:55:d9:4d:9c:e3:44:ff:d2:28:
+         79:21:8e:dd:04:48:bb:ab:41:41:a7:01:57:4a:08:56:13:98:
+         d0:00:54:90:c4:a7:6d:a1:33:a6:89:0b:bd:9e:a5:32:24:4d:
+         45:66:12:52:d1:01:a9:06:72:98:57:2a:79:ce:7a:99:21:15:
+         74:54:55:0e:a9:fe:af:9a:02:ef:d8:ca:e7:4f:0a:53:a0:2e:
+         fe:79:d2:39:0c:4a:5a:77:c5:36:03:f1:b1:3b:99:56:a8:53:
+         7e:a4:45:a0:4c:09:ff:78:f3:a6:bd:98:38:bb:d2:3f:e5:7b:
+         53:c0:c6:40:b9:4f:38:80:f0:f5:b5:19:f2:87:e8:e2:c7:b3:
+         ad:6d:06:fe:d0:32:3b:93:f7:1a:07:9a:82:7e:20:79:75:8e:
+         d1:89:da:e7:bd:e2:56:17:c0:d8:f4:25:d9:81:ac:b6:ae:bc:
+         9f:9a:14:1a:16:d0:74:e3:9f:52:d9:16:ef:63:f8:9e:59:b3:
+         23:b9:a9:44:5f:98:f8:d5:0d:a5:ed:0b:a9:35:db:88:f8:f7:
+         22:0b:c9:4c
+-----BEGIN CERTIFICATE-----
+MIID1DCCArwCCQC6o4lyzY/w1DANBgkqhkiG9w0BAQUFADCBqzELMAkGA1UEBhMC
+U0UxEjAQBgNVBAgMCVRha2EgVHVrYTEdMBsGA1UEBwwUS2V5TmFubnkgVGVzdCBD
+ZW50cmUxETAPBgNVBAoMCEtleU5hbm55MRQwEgYDVQQLDAtLZXlOYW5ueSBRQTEb
+MBkGA1UEAwwSS2V5TmFubnkgVGVzdCBIZXJvMSMwIQYJKoZIhvcNAQkBFhRrZXlu
+YW5ueUBleGFtcGxlLmNvbTAeFw0xNDExMTgxOTM0MjBaFw0yNDExMTgxOTM0MjBa
+MIGrMQswCQYDVQQGEwJTRTESMBAGA1UECAwJVGFrYSBUdWthMR0wGwYDVQQHDBRL
+ZXlOYW5ueSBUZXN0IENlbnRyZTERMA8GA1UECgwIS2V5TmFubnkxFDASBgNVBAsM
+C0tleU5hbm55IFFBMRswGQYDVQQDDBJLZXlOYW5ueSBUZXN0IEhlcm8xIzAhBgkq
+hkiG9w0BCQEWFGtleW5hbm55QGV4YW1wbGUuY29tMIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEAsw8ZE3a5gfK7M6hBLjZkUJ8R59EUFRQ02Hxqpxw5kOxI
+xKy41AovJdj/m186LHy2JM5Q+Os1AZdaPv+VA8zePXrHAu3EHCxD9y7r1ziNb7L5
+srV8XAbCJ/w1+7LQw+bnDr5dLfsvAC/2MOLUjLPiHNO4EcZ0c0sct18SITiPzhk/
+ZZVXhzjc/XcSMvkeUF8sVrUFrREiT68AmlVN/FM2VAOl09KMwttVs5t4PSntKQmB
+As5bFoAT0+cOcvot5Pdy8BytB+tpcga8P6bwW1LcKVUgQjt32VjJKmM+xZq1DO9M
+gDnhXWaUxMIE48Mng+82GZOoNSkChV88l3FVaC+IjwIDAQABMA0GCSqGSIb3DQEB
+BQUAA4IBAQABusZpL8CuymNW4MTxiYXhZjOFATDPbB/gnIHMmDF702q0EZifEXDU
+tHPp0ndV2U2c40T/0ih5IY7dBEi7q0FBpwFXSghWE5jQAFSQxKdtoTOmiQu9nqUy
+JE1FZhJS0QGpBnKYVyp5znqZIRV0VFUOqf6vmgLv2MrnTwpToC7+edI5DEpad8U2
+A/GxO5lWqFN+pEWgTAn/ePOmvZg4u9I/5XtTwMZAuU84gPD1tRnyh+jix7OtbQb+
+0DI7k/caB5qCfiB5dY7RidrnveJWF8DY9CXZgay2rryfmhQaFtB0459S2RbvY/ie
+WbMjualEX5j41Q2l7QupNduI+PciC8lM
+-----END CERTIFICATE-----
+# ls -l
+total 20
+-rw-r--r-- 1 root root 1387 Nov 18 19:34 kn01-cert.pem
+-rw-r--r-- 1 root root 1679 Nov 18 19:32 kn01-key.pem
+-rw-r--r-- 1 root root 1387 Nov 18 19:34 kn02-cert.pem
+-rw-r--r-- 1 root root 1675 Nov 18 19:33 kn02-key.pem
+-rw-r--r-- 1 root root  383 Nov 18 19:33 selfsign.cfg
+# chmod 640 kn*-key.pem
+# ls -l
+total 20
+-rw-r--r-- 1 root root 1387 Nov 18 19:34 kn01-cert.pem
+-rw-r----- 1 root root 1679 Nov 18 19:32 kn01-key.pem
+-rw-r--r-- 1 root root 1387 Nov 18 19:34 kn02-cert.pem
+-rw-r----- 1 root root 1675 Nov 18 19:33 kn02-key.pem
+-rw-r--r-- 1 root root  383 Nov 18 19:33 selfsign.cfg
+# 
+# mkdir /var/lib/keynanny/storage/app1
+# chown app1:keynanny /var/lib/keynanny/storage/app1
+# cp app1.conf /etc/keynanny/
+# echo -n secret123 | openssl smime -encrypt -binary -aes256 -outform pem -out app1pw01 /var/ lib/keynanny/crypto/kn02-cert.pem
+# cat app1pw01
+-----BEGIN PKCS7-----
+MIICLgYJKoZIhvcNAQcDoIICHzCCAhsCAQAxggHWMIIB0gIBADCBuTCBqzELMAkG
+A1UEBhMCU0UxEjAQBgNVBAgMCVRha2EgVHVrYTEdMBsGA1UEBwwUS2V5TmFubnkg
+VGVzdCBDZW50cmUxETAPBgNVBAoMCEtleU5hbm55MRQwEgYDVQQLDAtLZXlOYW5u
+eSBRQTEbMBkGA1UEAwwSS2V5TmFubnkgVGVzdCBIZXJvMSMwIQYJKoZIhvcNAQkB
+FhRrZXluYW5ueUBleGFtcGxlLmNvbQIJALqjiXLNj/DUMA0GCSqGSIb3DQEBAQUA
+BIIBAA+IY9k+sMn59YpCtiMuCrZChl6MumhJ176W/+LdKVD5ZmpP4qihODjkCFLk
+tcH/qhmK0cBSV46ZKyzb+ScFGWL7gUkvHZ2xufwpvqV2NBO/VdwaZ1ZwomDmgvFV
+jbMY5oWZi3iVPYZHPSxoxKxKN3hkDCeXVYop6w9yAROyKHb5QTL8HqbACO5Jm2oq
+3kLFgx/4vhY+9P0uVBLiTo+E5zfyq3FQdJye2JiyBgsIxLsc+TciXXPEJte6Yi0q
+WQsuEPAvskYDpc4Zm0VltxP1bvP1C3MP36YeAoMXOJ3TmyL3gnx867qe0M8krmoY
+7tuIIYCBl79l/zmm5zUIfItICPowPAYJKoZIhvcNAQcBMB0GCWCGSAFlAwQBKgQQ
+2sy0xXaNG615XSKzi1wCy4AQEK5x1ts/LzmznVxuelBmZw==
+-----END PKCS7-----
+# openssl smime -decrypt -aes256 -in app1pw01 -inform pem -recip /var/lib/keynanny/crypto/kn0 2-cert.pem -inkey /var/lib/keynanny/crypto/kn02-key.pem; echo
+secret123
+# openssl cms -in app1pw01 -inform pem -cmsout -print
+CMS_ContentInfo: 
+  contentType: pkcs7-envelopedData (1.2.840.113549.1.7.3)
+  d.envelopedData: 
+    version: <ABSENT>
+    originatorInfo: <ABSENT>
+    recipientInfos:
+      d.ktri: 
+        version: <ABSENT>
+        d.issuerAndSerialNumber: 
+          issuer: C=SE, ST=Taka Tuka, L=KeyNanny Test Centre, O=KeyNanny, OU=KeyNanny QA, CN=KeyNanny Test Hero/emailAddress=keynanny@example.com
+          serialNumber: 13448744038426472660
+        keyEncryptionAlgorithm: 
+          algorithm: rsaEncryption (1.2.840.113549.1.1.1)
+          parameter: NULL
+        encryptedKey: 
+          0000 - 0f 88 63 d9 3e b0 c9 f9-f5 8a 42 b6 23 2e 0a   ..c.>.....B.#..
+          000f - b6 42 86 5e 8c ba 68 49-d7 be 96 ff e2 dd 29   .B.^..hI......)
+          001e - 50 f9 66 6a 4f e2 a8 a1-38 38 e4 08 52 e4 b5   P.fjO...88..R..
+          002d - c1 ff aa 19 8a d1 c0 52-57 8e 99 2b 2c db f9   .......RW..+,..
+          003c - 27 05 19 62 fb 81 49 2f-1d 9d b1 b9 fc 29 be   '..b..I/.....).
+          004b - a5 76 34 13 bf 55 dc 1a-67 56 70 a2 60 e6 82   .v4..U..gVp.`..
+          005a - f1 55 8d b3 18 e6 85 99-8b 78 95 3d 86 47 3d   .U.......x.=.G=
+          0069 - 2c 68 c4 ac 4a 37 78 64-0c 27 97 55 8a 29 eb   ,h..J7xd.'.U.).
+          0078 - 0f 72 01 13 b2 28 76 f9-41 32 fc 1e a6 c0 08   .r...(v.A2.....
+          0087 - ee 49 9b 6a 2a de 42 c5-83 1f f8 be 16 3e f4   .I.j*.B......>.
+          0096 - fd 2e 54 12 e2 4e 8f 84-e7 37 f2 ab 71 50 74   ..T..N...7..qPt
+          00a5 - 9c 9e d8 98 b2 06 0b 08-c4 bb 1c f9 37 22 5d   ............7"]
+          00b4 - 73 c4 26 d7 ba 62 2d 2a-59 0b 2e 10 f0 2f b2   s.&..b-*Y..../.
+          00c3 - 46 03 a5 ce 19 9b 45 65-b7 13 f5 6e f3 f5 0b   F.....Ee...n...
+          00d2 - 73 0f df a6 1e 02 83 17-38 9d d3 9b 22 f7 82   s.......8..."..
+          00e1 - 7c 7c eb ba 9e d0 cf 24-ae 6a 18 ee db 88 21   ||.....$.j....!
+          00f0 - 80 81 97 bf 65 ff 39 a6-e7 35 08 7c 8b 48 08   ....e.9..5.|.H.
+          00ff - fa                                             .
+    encryptedContentInfo: 
+      contentType: pkcs7-data (1.2.840.113549.1.7.1)
+      contentEncryptionAlgorithm: 
+        algorithm: aes-256-cbc (2.16.840.1.101.3.4.1.42)
+        parameter: OCTET STRING:
+          0000 - da cc b4 c5 76 8d 1b ad-79 5d 22 b3 8b 5c 02   ....v...y]"..\.
+          000f - cb                                             .
+      encryptedContent: 
+        0000 - 10 ae 71 d6 db 3f 2f 39-b3 9d 5c 6e 7a 50 66   ..q..?/9..\nzPf
+        000f - 67                                             g
+    unprotectedAttrs:
+      <EMPTY>
+# cp app1pw01 /var/lib/keynanny/storage/app1/
+# ll /var/lib/keynanny/storage/app1/
+total 4
+-rw-r--r-- 1 root root 806 Nov 18 19:58 app1pw01
+# chown app1:keynanny /var/lib/keynanny/storage/app1/app1pw01
+# ll /var/lib/keynanny/storage/app1/
+total 4
+-rw-r--r-- 1 app1 keynanny 806 Nov 18 19:58 app1pw01
+# 
+#
+# /etc/init.d/keynanny start
+Starting keynanny credential protection daemon: app1.
+                                                          done
+# ls -l /var/lib/keynanny/run/
+total 4
+-rw-r--r-- 1 app1 keynanny 6 Nov 19 10:34 app1.pid
+srw------- 1 app1 keynanny 0 Nov 19 10:34 mapp1.socket
+# su - app1
+app1$
+app1$ keynanny --socketfile /var/lib/keynanny/run/app1.socket get app1pw01; echo
+secret123
+app1$
+ 
