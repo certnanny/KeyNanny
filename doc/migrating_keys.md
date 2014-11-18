@@ -18,6 +18,9 @@ This key is then added to KeyNanny on the source system where the re-keying
 takes place. The data files stored by KeyNanny can then be transfered to
 the target system.
 
+Note: Re-keying only works when the migration certificate has a "Not Before" 
+date that is newer than all other encryption certificates used by KeyNanny.
+
 # Preparing the Target System
 
 Start by generating the software keys to be used for the migration.
