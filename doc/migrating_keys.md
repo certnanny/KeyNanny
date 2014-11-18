@@ -1,8 +1,8 @@
-# Migrating KeyNanny Keys
+# Migrating KeyNanny Daemon Keys
 
 In certain situations, it may be necessary to migrate the data protected
 by KeyNanny from one system to another. This process can be done easily
-using openssl and the functions provided by KeyNanny.
+using openssl and the functions provided by keynannyd.
 
 *Important Disclaimer:* This can also be used to expose the contents of
 KeyNanny. The overall security of your data depends on the processes and
@@ -10,16 +10,16 @@ restrictions your organization implements and follows. This process might
 be adequate for a test environment, but not viable for use in production.
 YMMV.
 
-Basically, this process takes advantage of the re-keying feature in KeyNanny.
+Basically, this process takes advantage of the re-keying feature in keynannyd.
 Re-keying is the process of creating a new encryption key for KeyNanny to 
-use and have KeyNanny re-encrypt the existing protected data using the new
+use and have keynannyd re-encrypt the existing protected data using the new
 key. For the migration, a software key is generated on the target system. 
-This key is then added to KeyNanny on the source system where the re-keying
-takes place. The data files stored by KeyNanny can then be transfered to
-the target system.
+This key is then added to the keynannyd configuration on the source system
+where the re-keying takes place. The data files stored by KeyNanny can
+then be transfered to the target system.
 
 Note: Re-keying only works when the migration certificate has a "Not Before" 
-date that is newer than all other encryption certificates used by KeyNanny.
+date that is newer than all other encryption certificates used by keynannyd.
 
 # Preparing the Target System
 
