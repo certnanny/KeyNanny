@@ -1,0 +1,15 @@
+$ ./oracle_connect_with_keynanny.sh
+
+SQL*Plus: Release 11.2.0.2.0 Production on Tue Nov 18 00:45:17 2014
+
+Copyright (c) 1982, 2011, Oracle.  All rights reserved.
+
+SQL> Connected.
+SQL>
+USERNAME			  USER_ID
+------------------------------ ----------
+APP1				       52
+
+SQL> Disconnected from Oracle Database 11g Express Edition Release 11.2.0.2.0 - 64bit Production
+$
+

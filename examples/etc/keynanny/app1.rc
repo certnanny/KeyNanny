@@ -8,7 +8,7 @@ NAME=`basename $0 .rc`
 # customize the following settings according to application needs
 
 # keynanny socket file
-SOCKETFILE=/var/lib/keynanny/$NAME.socket
+SOCKETFILE=/var/lib/keynanny/run/$NAME.socket
 
 # base configuration directory to scan for the application, change accordingly
 APPLICATION_CONF_DIR=/etc/$NAME
