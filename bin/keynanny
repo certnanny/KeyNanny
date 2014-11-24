@@ -145,6 +145,19 @@ if ( $cmd eq 'get' ) {
     } else {
 	die "No value specified. Stopped";
     }
+} elsif ( $cmd eq 'link' ) {
+    my $to = shift;
+    my $from = shift;
+
+    if ((defined $to) && (defined $from)) {
+	my $result = $kn->link($to, $from);
+	if ($result->{STATUS} ne 'OK') {
+	    error_msg($result, 'Could not create link');
+	    $rc = 1;
+	}
+    } else {
+	die "Missing arguments. Stopped";
+    }
 } elsif ( $cmd eq 'list' ) {
     my $result = $kn->list();
     if ($result->{STATUS} eq 'OK') {
@@ -216,6 +229,7 @@ keynanny [options] [command] [arguments]
     set VAR VALUE         set variable VAR to VALUE
     list                  list all available variables
     template FILE         render template FILE, replacing keynanny variables
+    link A B              create a symlink from B to A in an atomic operation
 
 
 =head1 OPTIONS AND ARGUMENTS
@@ -265,6 +279,11 @@ Ask keynanny for the value of VAR and print it to STDOUT.
 
 Set keynanny variable VAR to VALUE. STDIN is read if no VALUE is
 specified.
+
+=item B<link A B>
+
+Create a symlink from B to A in an atomic operation. Files are relative
+to the user's storage path (e.g. C</var/lib/keynanny/storage/app1/>).
 
 =item B<list>
 
