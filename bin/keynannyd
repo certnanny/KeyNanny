@@ -230,7 +230,7 @@ sub _list_kn_objects {
     }
     close $find;
 
-    s"^$storage_path/?"" for @objects;    # remove the leading path part
+    s{ \A $storage_path/? }{}xms for @objects;    # remove the leading path part
     return @objects;
 }
 
@@ -1176,9 +1176,9 @@ sub process_request {
                             # if it is encrypted, the file contents will start with '-----BEGIN PKCS7-----'
                             # so let's check the first line ....
                             my $firstline;
-                            open(ENC_CHECK, "$arg") or die "persist_exists says I can read but I cannot...";
-                            $firstline = <ENC_CHECK>;
-                            close ENC_CHECK;
+                            open(my $enc_check, "$arg") or die "persist_exists says I can read but I cannot...";
+                            $firstline = <$enc_check>;
+                            close $enc_check;
                             if ($firstline eq '-----BEGIN PKCS7-----') {
                                 $data = persist_decrypt($arg);
                                 # cache retrieved value for later use
