@@ -217,16 +217,32 @@ sub _atomic_link {
 sub _list_kn_objects {
     my $storage_path = shift;
     my @objects;
+    my @robjects;
 
     my $find;
-    open ($find, "find -L $storage_path -type f |");
+    opendir($find, $storage_path);
     if (! defined $find) {
-        log_error("Unable to run find to discover keys. Aborting.");
-        return undef;
+	die "Could not scan storage directory $storage_path. Stopped";
     }
-    while (my $entry = <$find>) {
-        chomp $entry;
-        push @objects, $entry;
+
+    my $entry;
+    my $lentry;
+    while ($lentry = readdir $find) {
+	next if (($lentry eq '.') || ($lentry eq '..'));
+        if ( -l "$storage_path/$lentry" ) {
+            $entry = readlink "$storage_path/$lentry";
+            $entry =~ s{ \A $storage_path/? }{}xms;    # remove the leading path part
+        } else {
+            $entry = $lentry;
+        }
+        if ( -d "$storage_path/$entry" ) {
+            @robjects = _list_kn_objects("$storage_path/$lentry");
+            s{ \A }{$lentry/}xms for @robjects;    # prefix the directory name to the results
+            push @objects, @robjects;
+        } else {
+            chomp $lentry;
+            push @objects, $lentry;
+        }
     }
     close $find;
 
