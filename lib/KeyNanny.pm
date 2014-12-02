@@ -89,6 +89,23 @@ sub set {
     return $self->{PROTOCOL}->receive_response();
 }
 
+sub link {
+    my $self       = shift;
+    my $to         = shift;
+    my $from       = shift;
+
+    # reopen socket
+    $self->{PROTOCOL}->init_socket();
+    $self->{PROTOCOL}->send_command(
+	{
+	    CMD => 'link',
+	    ARG => [ $to, $from ],
+	});
+    my $result = $self->{PROTOCOL}->receive_response();
+    #print Dumper($result);
+    return $result;
+}
+
 sub list {
     my $self       = shift;
 

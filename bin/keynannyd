@@ -167,6 +167,90 @@ sub get_random_bytes {
     die "Could not generate random data. Stopped";
 }
 
+sub _get_temp_filename {
+    my $value;
+
+    my $openssl = $config{crypto}->{openssl};
+    my $cmdline = "$openssl rand -base64 48";
+    open my $handle, "$cmdline |";
+    if (! $handle) {
+        log_fatal("Error running command: $cmdline");
+        die "Error running command: $cmdline";
+    }
+    if ($? != 0) {
+        log_fatal("Could not generate random data using openssl");
+        die "Could not genate random data using openssl";
+    }
+    read $handle, $value, 64;
+    close $handle;
+
+    if (defined $value) {
+        $value =~ s/\W/_/g;    # replace non-word chars with a safe underscore
+        log_debug("Temporary filename: $value");
+        return $value;
+    }
+
+    log_fatal("Could not generate temp file name");
+    die "Could not generate temp file name. Stopped";
+}
+
+# changing a symlink is not an atomic operation on Linux, it's an
+# unlink/link sequence which can create a race condition; this sub
+# make symlinking atomic
+sub _atomic_link {
+    my $to = shift;
+    my $from = shift;
+    my $tmpfile = _get_temp_filename();
+
+    log_debug("Symlinking $from to $to using temporary file $tmpfile");
+    unless (symlink($to, $tmpfile)) {
+      log_error("Unable to symlink ...");
+      return 0;
+    }
+    unless (rename($tmpfile, $from)) {
+      log_error("Unable to rename ...");
+      return 0;
+    }
+    return 1;
+}
+
+sub _list_kn_objects {
+    my $storage_path = shift;
+    my @objects;
+    my @robjects;
+
+    my $find;
+    opendir($find, $storage_path);
+    if (! defined $find) {
+	die "Could not scan storage directory $storage_path. Stopped";
+    }
+
+    my $entry;
+    my $lentry;
+    while ($lentry = readdir $find) {
+	next if (($lentry eq '.') || ($lentry eq '..'));
+        if ( -l "$storage_path/$lentry" ) {
+            $entry = readlink "$storage_path/$lentry";
+            $entry =~ s{ \A $storage_path/? }{}xms;    # remove the leading path part
+        } else {
+            $entry = $lentry;
+        }
+        if ( -d "$storage_path/$entry" ) {
+            @robjects = _list_kn_objects("$storage_path/$lentry");
+            s{ \A }{$lentry/}xms for @robjects;    # prefix the directory name to the results
+            push @objects, @robjects;
+        } else {
+            chomp $lentry;
+            push @objects, $lentry;
+        }
+    }
+    close $find;
+
+    s{ \A $storage_path/? }{}xms for @objects;    # remove the leading path part
+    return @objects;
+}
+
+
 # store data at key := namespace:arg in (untrusted) cache
 # cache is assumed to be publicly readable and writable, hence apply ample
 # integrity protection
@@ -713,7 +797,7 @@ sub persist_encrypt {
     my $value = shift;
 
     # sanity checks: keys may only be word characters
-    if ($key !~ m{ \A \w+ \z }xms) {
+    if ($key !~ m{ \A [\w/]+ \z }xms) {
 	log_notice("Invalid characters in key $key");
 	return;
     }
@@ -864,7 +948,7 @@ sub persist_decrypt {
     my $key = shift;
 
     # sanity checks: keys may only be word characters
-    if ($key !~ m{ \A \w+ \z }xms) {
+    if ($key !~ m{ \A [\w/]+ \z }xms) {
 	log_notice("Invalid characters in key $key");
 	return;
     }
@@ -1091,27 +1175,33 @@ sub process_request {
 
 	      GET_ARG:
 		foreach my $arg (@{$request->{ARG}}) {
-		    if ($arg !~ m{ \A (\w+) \z }xms) {
+		    if ($arg !~ m{ \A ([\w/]+) \z }xms) {
 			$protocol->send_response(
 			    {
 				STATUS => 'CLIENT_ERROR',
-				MESSAGE => 'invalid argument (alphanumeric only)',
+				MESSAGE => 'invalid argument (alphanumeric and forward slashes only)',
 			    });
 			next GET_ARG;
 		    }
 
 		    my $data = cache_retrieve($arg);
 
-		    if (! defined $data) {
-			# cache miss, get data from persistent store
-			if (persist_exists($arg)) {
-			    $data = persist_decrypt($arg);
-
-			    # cache retrieved value for later use
-			    my $mtime = persist_exists($arg);
-			    cache_store($arg, $data, $mtime);
-			}
-		    }
+                    if (! defined $data) {
+                        # cache miss, get data from persistent store
+                        if (persist_exists($arg)) {
+                            # if it is encrypted, the file contents will start with '-----BEGIN PKCS7-----'
+                            local $/;
+                            open(my $enc_check, "$arg") or die "persist_exists says I can read but I cannot...";
+                            $data = <$enc_check>;
+                            close $enc_check;
+                            if ($data =~ m /^-----BEGIN PKCS7-----/) {
+                                $data = persist_decrypt($arg);
+                                # cache retrieved value for later use
+                                my $mtime = persist_exists($arg);
+                                cache_store($arg, $data, $mtime);
+                            }
+                        }
+                    }
 
 		    if (defined $data) {
 			$protocol->send_response(
@@ -1150,11 +1240,11 @@ sub process_request {
 		}
 
 		my $arg = $request->{ARG}->[0];
-		if ($arg !~ m{ \A (\w+) \z }xms) {
+		if ($arg !~ m{ \A ([\w/]+) \z }xms) {
 		    $protocol->send_response(
 			{
 			    STATUS => 'CLIENT_ERROR',
-			    MESSAGE => 'invalid argument key: alphanumeric only',
+			    MESSAGE => 'invalid argument key: alphanumeric and forward slashes only',
 			});
 		    next GET_ARG;
 		}
@@ -1202,6 +1292,61 @@ sub process_request {
 			});
 		    next COMMAND;
 		}
+            } elsif ($request->{CMD} eq 'link') {
+                if (! $config{access}->{write}) {
+                    $protocol->send_response(
+                        {
+                            STATUS => 'SERVER_ERROR',
+                            MESSAGE => 'write access denied',
+                        });
+                    next COMMAND;
+                }
+
+                if (scalar @{$request->{ARG}} != 2) {
+                    $protocol->send_response(
+                        {
+                            STATUS => 'SERVER_ERROR',
+                            MESSAGE => 'invalid number or arguments',
+                        });
+                    next COMMAND;
+                }
+
+                my $storage_path = $config{storage}->{dir};
+                my $to = $request->{ARG}->[0];
+                if ($to !~ m{ \A ([\w/]+) \z }xms) {
+                    $protocol->send_response(
+                        {
+                            STATUS => 'CLIENT_ERROR',
+                            MESSAGE => 'invalid argument key: alphanumeric and forward slashes only',
+                        });
+                    next GET_ARG;
+                }
+                $to = File::Spec->catfile($storage_path, $to);
+                my $from = $request->{ARG}->[1];
+                if ($from !~ m{ \A ([\w/]+) \z }xms) {
+                    $protocol->send_response(
+                        {
+                            STATUS => 'CLIENT_ERROR',
+                            MESSAGE => 'invalid argument key: alphanumeric and forward slashes only',
+                        });
+                    next GET_ARG;
+                }
+                $from = File::Spec->catfile($storage_path, $from);
+
+                if (_atomic_link($to, $from)) {
+                    $protocol->send_response(
+                        {
+                            STATUS => 'OK',
+                            MESSAGE => 0,
+                        });
+                } else {
+                    $protocol->send_response(
+                        {
+                            STATUS => 'SERVER_ERROR',
+                            MESSAGE => 'link failed',
+                        });
+                    next COMMAND;
+                }
 	    } elsif ($request->{CMD} eq 'list') {
 		if (! $config{access}->{read}) {
 		    $protocol->send_response(
@@ -1214,22 +1359,15 @@ sub process_request {
 
 		my @entries;
 		my $storage_path = $config{storage}->{dir};
-		opendir(my $dh, $storage_path);
-		if (defined $dh) {
-		  ENTRY:
-		    foreach my $file (readdir($dh)) {
-			next ENTRY if ($file eq '.' || $file eq '..');
-			push @entries, $file;
-		    }
-		    closedir $dh;
-		} else {
-		    $protocol->send_response(
-			{
-			    STATUS => 'SERVER_ERROR',
-			    MESSAGE => 'cannot access storage',
-			});
-		    next COMMAND;
-		}
+                @entries = _list_kn_objects($storage_path);
+                unless (scalar @entries) {   # Empty array = read error
+                    $protocol->send_response(
+                        {
+                            STATUS => 'SERVER_ERROR',
+                            MESSAGE => 'cannot access storage',
+                        });
+                    next COMMAND;
+                }
 
 		my $data = join("\r\n", @entries);
 		$protocol->send_response(
@@ -1278,6 +1416,7 @@ GetOptions(\%options,
 	   'check',
 	   'rekey',
 	   'debug',
+	   'link',
 	   'help',
 	   'man');
 
@@ -1457,36 +1596,47 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
     # preload-relaxed
     #   try to load all secrets, ignore secrets that cannot be unlocked
 
-    opendir(my $dh, $storage_path);
-    if (! defined $dh) {
-	die "Could not scan storage directory $storage_path. Stopped";
-    }
-
     log_debug("Scanning $storage_path for encrypted data objects");
     my $nok = 0;
     my $ok = 0;
     my $total = 0;
-  DIR_ENTRY:
-    while (my $entry  = readdir $dh) {
-	next DIR_ENTRY if (($entry eq '.') || ($entry eq '..'));
-	
-	my $entry_mtime = persist_exists($entry);
-	$total++;
-	if (defined $entry_mtime) {
-	    my $data = persist_decrypt($entry);
-	    if (defined $data) {
-		$cache->{$namespace}->{$entry}->{data} = $data;
-		$cache->{$namespace}->{$entry}->{mtime} = $entry_mtime;
-		log_info("Entry '$entry': successfully decrypted and cached");
-		$ok++;
-	    } else {
-		log_warn("Entry '$entry': unable to decrypt entry (token unavailable)");
-		$nok++;
-	    }
-	}
-    }
-    closedir $dh;
 
+    my @objects = _list_kn_objects($storage_path);
+    unless (scalar @objects) {   # Empty array = read error
+        log_fatal("Unable to read KeyNanny objects. Aborting.");
+        die "Unable to read KeyNanny objects. Aborting.";
+    }
+    my $entry;
+    my $entry_mtime;
+    my $data;
+    foreach $entry (@objects) {
+        $entry_mtime = persist_exists($entry);
+        $total++;
+        if (defined $entry_mtime) {
+            # if it is encrypted, the file contents will start with '-----BEGIN PKCS7-----'
+            local $/;
+            open(my $enc_check, "$storage_path/$entry") or die "persist_exists says I can read but I cannot...";
+            $data = <$enc_check>;
+            close $enc_check;
+            if ($data =~ m /^-----BEGIN PKCS7-----/) {
+                $data = persist_decrypt("$entry");
+            }
+            # cache retrieved value for later use
+            my $mtime = persist_exists("$storage_path/$entry");
+            cache_store("$entry", $data, $mtime);
+ 
+            if (defined $data) {
+                $cache->{$namespace}->{$entry}->{data} = $data;
+                $cache->{$namespace}->{$entry}->{mtime} = $entry_mtime;
+                log_info("Entry '$entry': successfully decrypted and cached");
+                $ok++;
+            } else {
+                log_warn("Entry '$entry': unable to decrypt entry (token unavailable)");
+                $nok++;
+            }
+        }
+    }
+    
     log_info("Number of KeyNanny entries (total): $total");
     log_info("Number of KeyNanny entries (accessible): $ok");
     log_info("Number of KeyNanny entries (inaccessible): $nok");
@@ -1829,6 +1979,24 @@ KeyNanny includes an init script that starts or stops all configured KeyNanny in
 The init script checks if a standard shell rc script exists for any KeyNanny instance it tries to start/stop and execute the shell script (with the argument start/stop) when launching/stopping the KeyNanny daemon.
 
 With this mechanism the system administrator can adapt how KeyNanny is integrated with the system. It allows to prepare temporary file systems, render configuration files replacing KeyNanny protected variables and or kick the application itself to reload its configuration file.
+
+=head3 Grouping (directories)
+
+KeyNanny allows you to group related information (secrets and metadata, see below) together in directories. These directories have no special meaning in KeyNanny and are treated simply as part of the name of an entity. KeyNanny entities are referred to by their path name relative to the applications storage directory.
+
+Example: Application C<app1> has its data stored in C</var/lib/keynanny/storage/app1/>. In there we could have a directory called C<database> that stores the C<dbuser> and C<password> objects. These are then accessible via C<keynanny ... get database/dbuser> and C<keynanny ... get database/password>.
+
+
+=head3 Metadata (unencrypted)
+
+KeyNanny allows you to store metadata in the storage area. This metadata is not encrypted. To avoid storing secrets unencrypted by accident, KeyNanny will always encrypt data stored using C<keynanny ... set ...>. However, you can place unencrypted files in the storage area and KeyNanny will deliver them via the C<keynanny ... get ...> command. This allows you to put non-confidential information, such as a database username, alongside your secrets for easier management (see Symlinks).
+
+
+=head3 Symlinks
+
+To allow easy switching of credentials and to provide transactional (atomic) changes KeyNanny supports symbolic links (symlinks, as in C<ln -s>). Symlinks can point to files or directories and they are treated as if they were real. In other words, if you have a directory called C<orginal> and create a symlink by issuing C<ln -s original linked>, then C<linked> and its content is treated as if it were a directory. This allows for transactional changes of any number of credentials and metadata.
+
+Example: Assume C<db1> is a directory containing encrypted credentials and unencrypted metadata for database access. C<db-current> is a symlink to C<db1>. The application uses C<db-current> to refer to the current configuration. When you need to change the password and/or metadata, you can copy C<db1> to C<db2> and make the necessary changes in there. Once done, re-link C<db-current> to C<db2>. The application will now use the new configuration.
 
 
 =head2 Integration and use cases
