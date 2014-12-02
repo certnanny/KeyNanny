@@ -86,6 +86,7 @@ sub log_message {
 	log4perl => {
 	    'warning' => 'warn',
 	    'notice'  => 'warn',
+	    'err'     => 'error',
 	}
 	);
 
