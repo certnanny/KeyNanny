@@ -1190,18 +1190,15 @@ sub process_request {
                         # cache miss, get data from persistent store
                         if (persist_exists($arg)) {
                             # if it is encrypted, the file contents will start with '-----BEGIN PKCS7-----'
-                            # so let's check the first line ....
-                            my $firstline;
+                            local $/;
                             open(my $enc_check, "$arg") or die "persist_exists says I can read but I cannot...";
-                            $firstline = <$enc_check>;
+                            $data = <$enc_check>;
                             close $enc_check;
-                            if ($firstline eq '-----BEGIN PKCS7-----') {
+                            if ($data =~ m /^-----BEGIN PKCS7-----/) {
                                 $data = persist_decrypt($arg);
                                 # cache retrieved value for later use
                                 my $mtime = persist_exists($arg);
                                 cache_store($arg, $data, $mtime);
-                            } else {
-                                $data = $firstline;
                             }
                         }
                     }
@@ -1616,23 +1613,18 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
         $entry_mtime = persist_exists($entry);
         $total++;
         if (defined $entry_mtime) {
-
-                            # if it is encrypted, the file contents will start with '-----BEGIN PKCS7-----'
-                            # so let's check the first line ....
-                            my $firstline;
-                            open(ENC_CHECK, "$storage_path/$entry") or die "persist_exists says I can read $entry but I cannot...";
-                            $firstline = <ENC_CHECK>;
-                            close ENC_CHECK;
-                            if ($firstline =~ m/^-----BEGIN PKCS7-----/) {
-                                $data = persist_decrypt($entry);
-                                # cache retrieved value for later use
-                                my $mtime = persist_exists($entry);
-                                cache_store($entry, $data, $mtime);
-                            } else {
-                                $data = $firstline;
-                            }
-
-#            $data = persist_decrypt($entry);
+            # if it is encrypted, the file contents will start with '-----BEGIN PKCS7-----'
+            local $/;
+            open(my $enc_check, "$storage_path/$entry") or die "persist_exists says I can read but I cannot...";
+            $data = <$enc_check>;
+            close $enc_check;
+            if ($data =~ m /^-----BEGIN PKCS7-----/) {
+                $data = persist_decrypt("$entry");
+            }
+            # cache retrieved value for later use
+            my $mtime = persist_exists("$storage_path/$entry");
+            cache_store("$entry", $data, $mtime);
+ 
             if (defined $data) {
                 $cache->{$namespace}->{$entry}->{data} = $data;
                 $cache->{$namespace}->{$entry}->{mtime} = $entry_mtime;
