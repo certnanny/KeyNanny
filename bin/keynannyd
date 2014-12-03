@@ -36,9 +36,7 @@ use KeyNanny::Protocol;
 
 use base qw( Net::Server::PreForkSimple );
 
-my %options = (
-    config => '/etc/keynanny/default.conf',
-    );
+my %options;
 
 my %config;
 my %config_defaults = (
@@ -1441,6 +1439,13 @@ my $rc = 0;
 
 # process configuration file
 #read_config($options{config}, %config);
+if (! defined $options{config}) {
+    die "Missing --config file. Stopped";
+}
+if (! -r $options{config}) {
+    die "Config file $options{config} not found or not readable. Stopped";
+}
+
 tie %config, 'Config::IniFiles', ( -file => $options{config} );
 
 if (! scalar keys %config) {
@@ -1820,7 +1825,7 @@ keynannyd [options]
 
 =item B<--config FILE>
 
-Read configuration from FILE. Default: /etc/keynanny/default.conf
+Read configuration from FILE. Required.
 
 =item B<--check>
 
