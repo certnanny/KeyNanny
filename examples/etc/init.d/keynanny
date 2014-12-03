@@ -190,6 +190,11 @@ case "$1" in
 	log_end_msg 0
 	rc_status -v
 	;;
+    restart)
+	shift
+	$0 stop $@
+	$0 start $@
+	;;
     *)
 	echo "Usage: $0 {start|stop|restart}"
 	exit 1
