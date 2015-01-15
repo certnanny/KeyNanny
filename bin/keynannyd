@@ -817,14 +817,21 @@ sub persist_encrypt {
     }
 
     my $storage_path = $config{storage}->{dir};
-    if (! -d $storage_path) {
-	log_info("Storage path $storage_path does not exist, creating directories");
+    my $extended_path = File::Spec->catfile($storage_path, $key);
+    $extended_path =~ s{ /[^/]+$ }{}xms;
+    log_debug("Extended path: $extended_path");
+    if (! -d $extended_path) {
+	log_info("Storage path $extended_path does not exist, creating directories");
+        my @dirs;
 	if (File::Path->can('make_path')) {
-	    File::Path->make_path($storage_path);
+            log_info("using make_path($extended_path)");
+	    @dirs = File::Path->make_path($extended_path);
 	} else {
 	    # legacy mode
-	    File::Path->mkpath($storage_path);
+            log_info("using mkpath($extended_path)");
+	    @dirs = File::Path->mkpath($extended_path);
 	}
+        log_info("Directories created: " . join(", ", @dirs));
     }
 
     my $file = File::Spec->catfile($storage_path, $key);
