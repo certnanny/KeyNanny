@@ -277,8 +277,6 @@ sub receive_response {
 		{
 		    LENGTH => $message,
 		});
-	} else {
-	    $self->{LOG}->error("KeyNanny::Protocol::receive_response(): invalid message: $message");
 	}
     }
     
