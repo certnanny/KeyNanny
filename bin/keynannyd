@@ -1160,8 +1160,8 @@ sub process_request {
 	while (1) {
 	    log_debug("Server $PID: idle");
 
-	    my $request = $protocol->receive_command();
 	    alarm($timeout);
+	    my $request = $protocol->receive_command();
 	    if (! defined $request) {
 		log_debug("Server $PID: client closed connection");
 		last COMMAND;
@@ -1413,13 +1413,20 @@ sub process_request {
 		next COMMAND;
 	    }
 	}
+	alarm($previous_alarm);
     }; # eval
+    # TODO: Do we need to reset alarm() here, too?
     if ($EVAL_ERROR =~ /TIMEOUT/) {
 	# TODO: do we need to handle this?
 	log_debug("Server $PID: timed out");
 	return;
     }
-    log_debug("Server $PID: exiting");
+    if ($EVAL_ERROR) {
+	# TODO: do we need to handle this?
+	log_debug("EVAL_ERROR: $EVAL_ERROR");
+	return;
+    }
+    log_debug("Server $PID: finished processing request");
     return;
 }
 
