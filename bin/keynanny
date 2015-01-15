@@ -27,7 +27,10 @@ use KeyNanny;
 my %config;
 
 sub usage {
-    print "Usage: ...\n";
+    pod2usage({
+        -exitval => 1,
+        -verbose => 0,
+    });
 }
 
 sub process_template {
