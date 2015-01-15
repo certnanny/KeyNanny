@@ -213,6 +213,20 @@ sub _atomic_link {
     return 1;
 }
 
+# _dereference_symlinks takes a full path to a file
+# if the file is a symlink, it is recursively dereferenced until the underlying
+# real file is found; if the file is not a symlink it is returned as is
+sub _dereference_symlinks {
+    my $file = shift;
+
+    if ( -l $file ) {
+        $file = readlink $file;
+        return _dereference_symlinks($file);
+    } else {
+        return $file;
+    }
+}
+
 sub _list_kn_objects {
     my $storage_path = shift;
     my @objects;
@@ -228,12 +242,7 @@ sub _list_kn_objects {
     my $lentry;
     while ($lentry = readdir $find) {
 	next if (($lentry eq '.') || ($lentry eq '..'));
-        if ( -l "$storage_path/$lentry" ) {
-            $entry = readlink "$storage_path/$lentry";
-            $entry =~ s{ \A $storage_path/? }{}xms;    # remove the leading path part
-        } else {
-            $entry = $lentry;
-        }
+        $entry = _dereference_symlinks($lentry);
         if ( -d "$storage_path/$entry" ) {
             @robjects = _list_kn_objects("$storage_path/$lentry");
             s{ \A }{$lentry/}xms for @robjects;    # prefix the directory name to the results
