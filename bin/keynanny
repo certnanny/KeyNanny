@@ -169,6 +169,14 @@ if ( $cmd eq 'get' ) {
 	error_msg($result, "Could not get list of keys");
 	$rc = 1;
     }
+} elsif ( $cmd eq 'ping' ) {
+    my $result = $kn->ping();
+    if ($result->{STATUS} eq 'OK') {
+        print "OK\n";
+    } else {
+	error_msg($result, "Could not ping server");
+	$rc = 1;
+    }
 } elsif ( $cmd eq 'template' ) {
     my $infile = shift;
 
@@ -221,18 +229,20 @@ keynanny - Command line interface to the KeyNanny credential protection daemon
 keynanny [options] [command] [arguments]
 
   Options:
-    --socketfile FILE     keynanny socket file
-    --outfile FILE        template output file name
-    --define VAR=VALUE    additional variables for template processing
-    --help                brief help message
-    --man                 full manual page
+    --socketfile FILE    keynanny socket file
+    --outfile FILE       template output file name
+    --define VAR=VALUE   additional variables for template processing
+    --help               brief help message
+    --man                full manual page
 
   Commands:
-    get VAR               get variable VAR from keynanny
-    set VAR VALUE         set variable VAR to VALUE
-    list                  list all available variables
-    template FILE         render template FILE, replacing keynanny variables
-    link A B              create a symlink from B to A in an atomic operation
+    get VAR              get variable VAR from keynanny
+    set VAR VALUE        set variable VAR to VALUE
+    list                 list all available variables
+    template FILE        render template FILE, replacing keynanny variables
+    link A B             create a symlink from B to A in an atomic 
+                         operation
+    ping                 ping server
 
 
 =head1 OPTIONS AND ARGUMENTS
@@ -302,5 +312,9 @@ It is possible to add additional tuples via the --define VAR=VALUE
 syntax.
 Please note that any values specified via --define overwrite those
 read from keynanny if the same variable name is used.
+
+=item B<ping>
+
+Ping server
 
 =back

@@ -49,6 +49,19 @@ sub new {
     return $self;
 }
 
+sub ping {
+    my $self       = shift;
+
+    # reopen socket
+    $self->{PROTOCOL}->init_socket();
+
+    $self->{PROTOCOL}->send_command(
+	{
+	    CMD => 'ping',
+	    ARG => [  ],
+	});
+    return $self->{PROTOCOL}->receive_response();
+}
 
 # high level methods, may be used by KeyNanny clients
 sub get {
@@ -127,6 +140,5 @@ sub list {
     }
     return $result;
 }
-
 
 1;

@@ -1626,9 +1626,14 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
     #   try to load all secrets, ignore secrets that cannot be unlocked
 
     log_debug("Scanning $storage_path for encrypted data objects");
-    my $nok = 0;
-    my $ok = 0;
+    my $nok_total = 0;
+    my $ok_total = 0;
+    my $ok_encrypted = 0;
+    my $ok_unencrypted = 0;
     my $total = 0;
+    my $total_encrypted = 0;
+    my $total_unencrypted = 0;
+
 
     my @objects = _list_kn_objects($storage_path);
     unless (scalar @objects) {   # Empty array = read error
@@ -1649,7 +1654,17 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
             close $enc_check;
             if ($data =~ m /^-----BEGIN PKCS7-----/) {
                 $data = persist_decrypt("$entry");
-            }
+		if (defined $data) {
+		    $total_encrypted++;
+		    
+		    if ($options{rekey}) {
+			log_info("Rekeying stored entries");
+		    }
+
+		}
+            } else {
+		$total_unencrypted++;
+	    }
             # cache retrieved value for later use
             my $mtime = persist_exists("$storage_path/$entry");
             cache_store("$entry", $data, $mtime);
@@ -1658,20 +1673,23 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
                 $cache->{$namespace}->{$entry}->{data} = $data;
                 $cache->{$namespace}->{$entry}->{mtime} = $entry_mtime;
                 log_info("Entry '$entry': successfully decrypted and cached");
-                $ok++;
+                $ok_total++;
             } else {
                 log_warn("Entry '$entry': unable to decrypt entry (token unavailable)");
-                $nok++;
+                $nok_total++;
             }
         }
     }
     
     log_info("Number of KeyNanny entries (total): $total");
-    log_info("Number of KeyNanny entries (accessible): $ok");
-    log_info("Number of KeyNanny entries (inaccessible): $nok");
+    log_info("Number of KeyNanny entries (total, encrypted): $total_encrypted");
+    log_info("Number of KeyNanny entries (total, unencrypted): $total_unencrypted");
 
-    if ($nok) {
-	log_warn("Unable to decrypt $nok KeyNanny entries");
+    log_info("Number of KeyNanny entries (accessible, total): $ok_total");
+    log_info("Number of KeyNanny entries (inaccessible, encrypted): $nok_total");
+
+    if ($nok_total) {
+	log_warn("Unable to decrypt $nok_total KeyNanny entries");
 	if ($config{keynanny}->{cache_strategy} eq 'preload') {
 	    log_error("Strict checking enabled, exiting due to errors");
 	    exit 1;
@@ -1679,6 +1697,12 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
     }
 
 } elsif ($config{keynanny}->{cache_strategy} eq 'memcache') {
+
+    # TODO
+    # disable memcache for now, because the reporting and rekeying code is only executed in preload
+    # strategy
+    die "NOTE: caching strategy memcache is currently disabled. Check again in a later software version. Stopped";
+
     ###########################################################################
     # prepare memcached connection
     my @memcached_servers = split(/\s*,\s*/, $config{memcache}->{servers});
@@ -1720,37 +1744,39 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
     die "Invalid cache strategy (expected: 'memcache', 'preload' or 'preload-relaxed'). Stopped";
 }
 
-if ($options{rekey}) {
-    log_info("Rekeying stored entries");
+# if ($options{rekey}) {
+#     log_info("Rekeying stored entries");
 
-    opendir(my $dh, $storage_path);
-    if (! defined $dh) {
-	die "Could not scan storage directory $storage_path. Stopped";
-    }
+#     die "Rekeying is currently not supported. Please check https://github.com/certnanny/KeyNanny/issues/36 and update the software once this is resolved. Stopped";
 
-    log_debug("Scanning $storage_path for encrypted data objects");
-    my $nok = 0;
-  DIR_ENTRY:
-    while (my $entry  = readdir $dh) {
-	next DIR_ENTRY if (($entry eq '.') || ($entry eq '..'));
+#     opendir(my $dh, $storage_path);
+#     if (! defined $dh) {
+# 	die "Could not scan storage directory $storage_path. Stopped";
+#     }
 
-	log_info("Rekeying $entry");
-	my $entry_mtime = persist_exists($entry);
-	if (defined $entry_mtime) {
-	    my $data = persist_decrypt($entry);
-	    if (defined $data) {
-		log_info("Key '$entry': successfully rekeyed");
-		persist_encrypt($entry, $data);
-	    } else {
-		log_error("Key '$entry': could not rekey entry (token unavailable?)");
-		$nok++;
-	    }
-	}
-    }
-    closedir $dh;
-    log_info("Rekeying finished with $nok errors");
-    exit ($nok == 0);
-}
+#     log_debug("Scanning $storage_path for encrypted data objects");
+#     my $nok = 0;
+#   DIR_ENTRY:
+#     while (my $entry  = readdir $dh) {
+# 	next DIR_ENTRY if (($entry eq '.') || ($entry eq '..'));
+
+# 	log_info("Rekeying $entry");
+# 	my $entry_mtime = persist_exists($entry);
+# 	if (defined $entry_mtime) {
+# 	    my $data = persist_decrypt($entry);
+# 	    if (defined $data) {
+# 		log_info("Key '$entry': successfully rekeyed");
+# 		persist_encrypt($entry, $data);
+# 	    } else {
+# 		log_error("Key '$entry': could not rekey entry (token unavailable?)");
+# 		$nok++;
+# 	    }
+# 	}
+#     }
+#     closedir $dh;
+#     log_info("Rekeying finished with $nok errors");
+#     exit ($nok == 0);
+# }
 
 
 if ($options{check}) {
@@ -2084,7 +2110,7 @@ For Unix shell scripts use the supplied keynanny binary. It can query the KeyNan
       exit 1
   fi
 
-=head3 Direct integration in B<Perl> applications using the supplied KeyNanny::Protocol module
+=head3 Direct integration in B<Perl> applications using the supplied KeyNanny module
 
   use KeyNanny;
 
