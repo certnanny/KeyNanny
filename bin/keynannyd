@@ -923,6 +923,14 @@ sub _decrypt {
 		print $fh $token->{engine} . " = engine_config\n";
 		print $fh "[ engine_config ]\n";
 
+		# make sure certain entries come first
+	        foreach my $key (qw( engine_id dynamic_path SO_PATH )) {
+		    if (exists $config{$engine_section}->{$key}) {
+			print $fh "$key = $config{$engine_section}->{$key}\n";
+			delete $config{$engine_section}->{$key};
+		    }
+		}
+
 	        foreach my $key (keys %{$config{$engine_section}}) {
 		    print $fh "$key = $config{$engine_section}->{$key}\n";
 		}
