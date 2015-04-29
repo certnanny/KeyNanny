@@ -901,8 +901,12 @@ sub _decrypt {
     my $config_file;
     if (defined $token->{engine}) {
 	push @cmd,
-	'-keyform', 'engine',
 	'-engine', $token->{engine};
+
+	if (defined $token->{keyform}) {
+	    push @cmd,
+	    '-keyform', $token->{keyform},
+	}
 	
 	# write openssl config if engine config is found
 	my $engine_section = $token->{openssl_engine_config};
@@ -2322,6 +2326,16 @@ Very likely you will also have to specify an "engine section" for OpenSSL that i
 
 =back
 
+=head3 B<keyform> = KEYFORM
+
+=over 4
+
+Optional.
+
+If necessary allows to pass -keyform KEYFORM argument to OpenSSL command line. For some hardware crypto devices this must be set to 'engine'.
+
+=back
+
 =head3 B<openssl_engine_config> = [ENGINE_CONFIG_SECTION]
 
 =over 4
@@ -2480,6 +2494,7 @@ If set to 1 clients are allowed to set values via keynanny.
   certificate = $(crypto.base_dir)/hsm-cert.pem
   key = hsm-key
   engine = chil
+  keyform = engine
   openssl_engine_config = chil_engine
 
   [chil_engine]
