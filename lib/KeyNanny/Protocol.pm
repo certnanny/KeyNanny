@@ -52,11 +52,6 @@ sub new {
 	    confess "SOCKET and SOCKETFILE are mutually exclusive as initializing arguments to KeyNanny::Protocol";
 	}
 
-	if (! defined $arg->{SOCKETFILE}) {
-	    $self->{LOG}->error("KeyNanny::Protocol::new(): No socketfile specified");
-	    confess("No socketfile specified");
-	}
-
 	$self->{SOCKETFILE} = $arg->{SOCKETFILE};
 	$self->init_socket();
     }
