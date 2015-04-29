@@ -85,6 +85,7 @@ sub log_message {
 	    'warning' => 'warn',
 	    'notice'  => 'warn',
 	    'err'     => 'error',
+	    'crit'    => 'fatal',
 	}
 	);
 
@@ -1383,14 +1384,6 @@ sub process_request {
 		my @entries;
 		my $storage_path = $config{storage}->{dir};
                 @entries = _list_kn_objects($storage_path);
-                unless (scalar @entries) {   # Empty array = read error
-                    $protocol->send_response(
-                        {
-                            STATUS => 'SERVER_ERROR',
-                            MESSAGE => 'cannot access storage',
-                        });
-                    next COMMAND;
-                }
 
 		my $data = join("\r\n", @entries);
 		$protocol->send_response(
@@ -1644,10 +1637,7 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
 
 
     my @objects = _list_kn_objects($storage_path);
-    unless (scalar @objects) {   # Empty array = read error
-        log_fatal("Unable to read KeyNanny objects. Aborting.");
-        die "Unable to read KeyNanny objects. Aborting.";
-    }
+
     my $entry;
     my $entry_mtime;
     my $data;
