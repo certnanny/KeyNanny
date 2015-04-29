@@ -228,6 +228,25 @@ sub _dereference_symlinks {
     }
 }
 
+
+sub list_kn_objects {
+    my $storage_path = shift;
+
+    my @objects = _list_kn_objects($storage_path);
+
+    # configuration may limit keynanny entries to certain regex matches
+    if (defined $config{storage}->{entry_match_regex}) {
+       my $pattern = qr{$config{storage}->{entry_match_regex}};
+       @objects = grep { m{$pattern} } @objects;
+    }
+    if (defined $config{storage}->{entry_ignore_regex}) {
+       my $pattern = qr{$config{storage}->{entry_ignore_regex}};
+       @objects = grep { ! m{$pattern} } @objects;
+    }
+
+    return @objects;
+}
+
 sub _list_kn_objects {
     my $storage_path = shift;
     my @objects;
@@ -1387,7 +1406,7 @@ sub process_request {
 
 		my @entries;
 		my $storage_path = $config{storage}->{dir};
-                @entries = _list_kn_objects($storage_path);
+                @entries = list_kn_objects($storage_path);
 
 		my $data = join("\r\n", @entries);
 		$protocol->send_response(
@@ -1640,7 +1659,7 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
     my $total_unencrypted = 0;
 
 
-    my @objects = _list_kn_objects($storage_path);
+    my @objects = list_kn_objects($storage_path);
 
     my $entry;
     my $entry_mtime;
