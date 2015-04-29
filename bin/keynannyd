@@ -825,7 +825,7 @@ sub persist_encrypt {
     my $value = shift;
 
     # sanity checks: keys may only be word characters
-    if ($key !~ m{ \A [\w/]+ \z }xms) {
+    if ($key !~ m{ \A [\w/\-]+ \z }xms) {
 	log_notice("Invalid characters in key $key");
 	return;
     }
@@ -995,7 +995,7 @@ sub persist_decrypt {
     my $key = shift;
 
     # sanity checks: keys may only be word characters
-    if ($key !~ m{ \A [\w/]+ \z }xms) {
+    if ($key !~ m{ \A [\w/\-]+ \z }xms) {
 	log_notice("Invalid characters in key $key");
 	return;
     }
@@ -1222,11 +1222,11 @@ sub process_request {
 
 	      GET_ARG:
 		foreach my $arg (@{$request->{ARG}}) {
-		    if ($arg !~ m{ \A ([\w/]+) \z }xms) {
+		    if ($arg !~ m{ \A ([\w/\-)]+) \z }xms) {
 			$protocol->send_response(
 			    {
 				STATUS => 'CLIENT_ERROR',
-				MESSAGE => 'invalid argument (alphanumeric and forward slashes only)',
+				MESSAGE => 'invalid argument (alphanumeric, dash and forward slashes only)',
 			    });
 			next GET_ARG;
 		    }
@@ -1287,11 +1287,11 @@ sub process_request {
 		}
 
 		my $arg = $request->{ARG}->[0];
-		if ($arg !~ m{ \A ([\w/]+) \z }xms) {
+		if ($arg !~ m{ \A ([\w/\-]+) \z }xms) {
 		    $protocol->send_response(
 			{
 			    STATUS => 'CLIENT_ERROR',
-			    MESSAGE => 'invalid argument key: alphanumeric and forward slashes only',
+			    MESSAGE => 'invalid argument key: alphanumeric, dash and forward slashes only',
 			});
 		    next GET_ARG;
 		}
@@ -1360,21 +1360,21 @@ sub process_request {
 
                 my $storage_path = $config{storage}->{dir};
                 my $to = $request->{ARG}->[0];
-                if ($to !~ m{ \A ([\w/]+) \z }xms) {
+                if ($to !~ m{ \A ([\w/\-]+) \z }xms) {
                     $protocol->send_response(
                         {
                             STATUS => 'CLIENT_ERROR',
-                            MESSAGE => 'invalid argument key: alphanumeric and forward slashes only',
+                            MESSAGE => 'invalid argument key: alphanumeric, dash and forward slashes only',
                         });
                     next GET_ARG;
                 }
                 $to = File::Spec->catfile($storage_path, $to);
                 my $from = $request->{ARG}->[1];
-                if ($from !~ m{ \A ([\w/]+) \z }xms) {
+                if ($from !~ m{ \A ([\w/\-]+) \z }xms) {
                     $protocol->send_response(
                         {
                             STATUS => 'CLIENT_ERROR',
-                            MESSAGE => 'invalid argument key: alphanumeric and forward slashes only',
+                            MESSAGE => 'invalid argument key: alphanumeric, dash and forward slashes only',
                         });
                     next GET_ARG;
                 }
