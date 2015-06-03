@@ -338,6 +338,18 @@ The section may be referenced by any number of tokens.
 >
 > Octal umask to use when writing data to storage directory.
 
+### **entry_match_regex** = REGEX
+
+> Optional.
+>
+> Only consider files matching REGEX as KeyNanny entries.
+
+### **entry_ignore_regex** = REGEX
+
+> Optional.
+>
+> Ignore files matching REGEX as KeyNanny entries.
+
 ## \[server\]
 
 ### **socket\_file** = PATH

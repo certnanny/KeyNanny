@@ -197,7 +197,11 @@ if ( $cmd eq 'get' ) {
     foreach my $entry ( @variables ) {
 	my $result = $kn->get($entry);
 	if ($result->{STATUS} eq 'OK') {
+	    my $mangled_entry = $entry;
+	    $mangled_entry =~ s{/}{_}g;
+
 	    $vars{$entry} = $result->{DATA};
+	    $vars{$mangled_entry} = $result->{DATA};
 	} else {
 	    error_msg($result, "Could not get key $entry");
 	    exit 1;

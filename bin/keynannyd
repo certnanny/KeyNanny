@@ -85,6 +85,7 @@ sub log_message {
 	    'warning' => 'warn',
 	    'notice'  => 'warn',
 	    'err'     => 'error',
+	    'crit'    => 'fatal',
 	}
 	);
 
@@ -225,6 +226,25 @@ sub _dereference_symlinks {
     } else {
         return $file;
     }
+}
+
+
+sub list_kn_objects {
+    my $storage_path = shift;
+
+    my @objects = _list_kn_objects($storage_path);
+
+    # configuration may limit keynanny entries to certain regex matches
+    if (defined $config{storage}->{entry_match_regex}) {
+       my $pattern = qr{$config{storage}->{entry_match_regex}};
+       @objects = grep { m{$pattern} } @objects;
+    }
+    if (defined $config{storage}->{entry_ignore_regex}) {
+       my $pattern = qr{$config{storage}->{entry_ignore_regex}};
+       @objects = grep { ! m{$pattern} } @objects;
+    }
+
+    return @objects;
 }
 
 sub _list_kn_objects {
@@ -805,7 +825,7 @@ sub persist_encrypt {
     my $value = shift;
 
     # sanity checks: keys may only be word characters
-    if ($key !~ m{ \A [\w/]+ \z }xms) {
+    if ($key !~ m{ \A [\w/\-]+ \z }xms) {
 	log_notice("Invalid characters in key $key");
 	return;
     }
@@ -900,8 +920,12 @@ sub _decrypt {
     my $config_file;
     if (defined $token->{engine}) {
 	push @cmd,
-	'-keyform', 'engine',
 	'-engine', $token->{engine};
+
+	if (defined $token->{keyform}) {
+	    push @cmd,
+	    '-keyform', $token->{keyform},
+	}
 	
 	# write openssl config if engine config is found
 	my $engine_section = $token->{openssl_engine_config};
@@ -922,6 +946,14 @@ sub _decrypt {
 		print $fh "[ engine_section ]\n";
 		print $fh $token->{engine} . " = engine_config\n";
 		print $fh "[ engine_config ]\n";
+
+		# make sure certain entries come first
+	        foreach my $key (qw( engine_id dynamic_path SO_PATH )) {
+		    if (exists $config{$engine_section}->{$key}) {
+			print $fh "$key = $config{$engine_section}->{$key}\n";
+			delete $config{$engine_section}->{$key};
+		    }
+		}
 
 	        foreach my $key (keys %{$config{$engine_section}}) {
 		    print $fh "$key = $config{$engine_section}->{$key}\n";
@@ -963,7 +995,7 @@ sub persist_decrypt {
     my $key = shift;
 
     # sanity checks: keys may only be word characters
-    if ($key !~ m{ \A [\w/]+ \z }xms) {
+    if ($key !~ m{ \A [\w/\-]+ \z }xms) {
 	log_notice("Invalid characters in key $key");
 	return;
     }
@@ -1190,11 +1222,11 @@ sub process_request {
 
 	      GET_ARG:
 		foreach my $arg (@{$request->{ARG}}) {
-		    if ($arg !~ m{ \A ([\w/]+) \z }xms) {
+		    if ($arg !~ m{ \A ([\w/\-)]+) \z }xms) {
 			$protocol->send_response(
 			    {
 				STATUS => 'CLIENT_ERROR',
-				MESSAGE => 'invalid argument (alphanumeric and forward slashes only)',
+				MESSAGE => 'invalid argument (alphanumeric, dash and forward slashes only)',
 			    });
 			next GET_ARG;
 		    }
@@ -1255,11 +1287,11 @@ sub process_request {
 		}
 
 		my $arg = $request->{ARG}->[0];
-		if ($arg !~ m{ \A ([\w/]+) \z }xms) {
+		if ($arg !~ m{ \A ([\w/\-]+) \z }xms) {
 		    $protocol->send_response(
 			{
 			    STATUS => 'CLIENT_ERROR',
-			    MESSAGE => 'invalid argument key: alphanumeric and forward slashes only',
+			    MESSAGE => 'invalid argument key: alphanumeric, dash and forward slashes only',
 			});
 		    next GET_ARG;
 		}
@@ -1328,21 +1360,21 @@ sub process_request {
 
                 my $storage_path = $config{storage}->{dir};
                 my $to = $request->{ARG}->[0];
-                if ($to !~ m{ \A ([\w/]+) \z }xms) {
+                if ($to !~ m{ \A ([\w/\-]+) \z }xms) {
                     $protocol->send_response(
                         {
                             STATUS => 'CLIENT_ERROR',
-                            MESSAGE => 'invalid argument key: alphanumeric and forward slashes only',
+                            MESSAGE => 'invalid argument key: alphanumeric, dash and forward slashes only',
                         });
                     next GET_ARG;
                 }
                 $to = File::Spec->catfile($storage_path, $to);
                 my $from = $request->{ARG}->[1];
-                if ($from !~ m{ \A ([\w/]+) \z }xms) {
+                if ($from !~ m{ \A ([\w/\-]+) \z }xms) {
                     $protocol->send_response(
                         {
                             STATUS => 'CLIENT_ERROR',
-                            MESSAGE => 'invalid argument key: alphanumeric and forward slashes only',
+                            MESSAGE => 'invalid argument key: alphanumeric, dash and forward slashes only',
                         });
                     next GET_ARG;
                 }
@@ -1374,15 +1406,7 @@ sub process_request {
 
 		my @entries;
 		my $storage_path = $config{storage}->{dir};
-                @entries = _list_kn_objects($storage_path);
-                unless (scalar @entries) {   # Empty array = read error
-                    $protocol->send_response(
-                        {
-                            STATUS => 'SERVER_ERROR',
-                            MESSAGE => 'cannot access storage',
-                        });
-                    next COMMAND;
-                }
+                @entries = list_kn_objects($storage_path);
 
 		my $data = join("\r\n", @entries);
 		$protocol->send_response(
@@ -1635,11 +1659,8 @@ if ($config{keynanny}->{cache_strategy} =~ m{ \A (?:preload|preload-relaxed) }xm
     my $total_unencrypted = 0;
 
 
-    my @objects = _list_kn_objects($storage_path);
-    unless (scalar @objects) {   # Empty array = read error
-        log_fatal("Unable to read KeyNanny objects. Aborting.");
-        die "Unable to read KeyNanny objects. Aborting.";
-    }
+    my @objects = list_kn_objects($storage_path);
+
     my $entry;
     my $entry_mtime;
     my $data;
@@ -2324,6 +2345,16 @@ Very likely you will also have to specify an "engine section" for OpenSSL that i
 
 =back
 
+=head3 B<keyform> = KEYFORM
+
+=over 4
+
+Optional.
+
+If necessary allows to pass -keyform KEYFORM argument to OpenSSL command line. For some hardware crypto devices this must be set to 'engine'.
+
+=back
+
 =head3 B<openssl_engine_config> = [ENGINE_CONFIG_SECTION]
 
 =over 4
@@ -2482,6 +2513,7 @@ If set to 1 clients are allowed to set values via keynanny.
   certificate = $(crypto.base_dir)/hsm-cert.pem
   key = hsm-key
   engine = chil
+  keyform = engine
   openssl_engine_config = chil_engine
 
   [chil_engine]
