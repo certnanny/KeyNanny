@@ -165,7 +165,7 @@ else {
         die "Error reading encrypted password: $!";
     }
 
-    my $encrypted_password = join( '', <$fh> );
+    $encrypted_password = join( '', <$fh> );
     close $fh;
 
     my $success = 1;
