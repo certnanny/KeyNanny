@@ -12,6 +12,8 @@ use strict;
 use warnings;
 use English;
 
+our $VERSION = 1.07;
+
 use Carp;
 use Data::Dumper;
 use Log::Log4perl qw( :easy );

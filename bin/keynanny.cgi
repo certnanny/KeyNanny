@@ -84,7 +84,9 @@ sub get_ticket_id {
     my ( $ticket_id, $ticket_file );
 
     until ( $ticket_id && not -f $ticket_file ) {
-        $ticket_id   = `openssl rand 48 | openssl sha1 | head -c 7`;
+        $ticket_id   = `openssl rand 48 | openssl sha1`;
+        $ticket_id   =~ s{^\(stdin\)=\s}{};
+        $ticket_id   = substr($ticket_id, 0, 7);
         $ticket_file = $config->{spooldir} . '/' . $ticket_id;
         chomp $ticket_id;
 
@@ -165,7 +167,7 @@ else {
         die "Error reading encrypted password: $!";
     }
 
-    my $encrypted_password = join( '', <$fh> );
+    $encrypted_password = join( '', <$fh> );
     close $fh;
 
     my $success = 1;
